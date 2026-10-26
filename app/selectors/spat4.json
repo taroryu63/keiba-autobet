@@ -23,7 +23,9 @@
     },
     {
       "do": "click",
-      "sel": "input[type='submit'][value*='ログイン'], button:has-text('ログイン'), a:has-text('ログイン')"
+      "sel": "a.loginbtn, a[name='B1'], input[type='submit'][value*='ログイン'], button:has-text('ログイン')",
+      "timeout": 8000,
+      "js_fallback": "loginCheck()"
     },
     {
       "do": "fill",
@@ -34,7 +36,7 @@
     },
     {
       "do": "click",
-      "sel": "input[type='submit'], button:has-text('ログイン')",
+      "sel": "a.loginbtn, input[type='submit'], button:has-text('ログイン'), a:has-text('ログイン')",
       "optional": true,
       "timeout": 3000
     },

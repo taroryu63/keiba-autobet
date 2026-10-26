@@ -133,6 +133,10 @@ class SiteBot:
                     continue
                 raise StepError(f"{label} で失敗: {e}") from e
 
+    def _visible(self, sel: str):
+        """画面に見えている要素のうち最初のもの。サイトによっては同じボタンが隠れて複数あるため。"""
+        return self.page.locator(sel).filter(visible=True).first
+
     async def _step(self, step: dict, vars: dict) -> None:
         p = self.page
         t = step.get("timeout")
@@ -141,32 +145,38 @@ class SiteBot:
         if do == "goto":
             await p.goto(render(step["url"], vars), wait_until="domcontentloaded")
         elif do == "fill":
-            await p.locator(sel).first.fill(render(step["value"], vars), timeout=t)
+            await self._visible(sel).fill(render(step["value"], vars), timeout=t)
         elif do == "click":
-            await p.locator(sel).first.click(timeout=t)
+            try:
+                await self._visible(sel).click(timeout=t)
+            except Exception:
+                # ボタンが押せないとき、サイトのJavaScriptを直接呼ぶ（"js_fallback" がある場合のみ）
+                if not step.get("js_fallback"):
+                    raise
+                await p.evaluate(step["js_fallback"])
         elif do == "select":
-            await p.locator(sel).first.select_option(label=render(step["label"], vars), timeout=t)
+            await self._visible(sel).select_option(label=render(step["label"], vars), timeout=t)
         elif do == "press":
             await p.keyboard.press(step["key"])
         elif do == "wait":
             await p.wait_for_timeout(step["ms"])
         elif do == "wait_for":
-            await p.locator(sel).first.wait_for(state="visible", timeout=t)
+            await self._visible(sel).wait_for(state="visible", timeout=t)
         elif do == "read":
-            text = await p.locator(sel).first.inner_text(timeout=t or 5000)
+            text = await self._visible(sel).inner_text(timeout=t or 5000)
             m = re.search(r"\d[\d,]*(?:\.\d+)?", text)
             if not m:
                 raise StepError(f"数字を読み取れません: {text!r}")
             vars[step["var"]] = float(m.group(0).replace(",", ""))
         elif do == "read_time":
-            text = await p.locator(sel).first.inner_text(timeout=t or 5000)
+            text = await self._visible(sel).inner_text(timeout=t or 5000)
             m = re.search(r"(\d{1,2})[:：時](\d{2})", text)
             if not m:
                 raise StepError(f"時刻を読み取れません: {text!r}")
             vars[step["var"]] = f"{int(m.group(1)):02d}:{m.group(2)}"
         elif do == "has":
             try:
-                await p.locator(sel).first.wait_for(state="visible", timeout=t or 3000)
+                await self._visible(sel).wait_for(state="visible", timeout=t or 3000)
                 vars[step["var"]] = 1
             except Exception:
                 vars[step["var"]] = 0

@@ -10,7 +10,7 @@ from app.bots.engine import SiteBot
 from app.config import config
 
 MOCK_HTML = """<!doctype html><meta charset="utf-8"><body>
-<div id="login"><input name="id"><button id="go" onclick="login()">ログイン</button></div>
+<div id="login"><a class="go" style="display:none">ログイン</a><input name="id"><a class="go" onclick="login()">ログイン</a></div>
 <div id="race" hidden>
   <table><tr data-n="4"><td class="num">4</td><td class="odds">ODDS4</td></tr>
          <tr data-n="5"><td class="num">5</td><td class="odds">8.0</td></tr></table>
@@ -41,7 +41,7 @@ FLOW = {
     "login": [
         {"do": "goto", "url": "{url}"},
         {"do": "fill", "sel": "input[name='id']", "value": "{user}"},
-        {"do": "click", "sel": "#go"},
+        {"do": "click", "sel": "a.go"},
     ],
     "open_race": [{"do": "wait_for", "sel": "#race"}],
     "read_odds": [{"do": "read", "sel": "tr[data-n='{num}'] .odds", "var": "odds"}],
