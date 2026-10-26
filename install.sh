@@ -3,7 +3,7 @@
 #   curl -fsSL <このファイルのURL> | sudo bash
 set -euo pipefail
 
-REPO_URL="${REPO_URL:-__REPO_URL__}"
+REPO_URL="${REPO_URL:-https://github.com/taroryu63/keiba-autobet.git}"
 DIR=/opt/keiba
 
 say() { printf '\n\033[1;32m%s\033[0m\n' "$*"; }

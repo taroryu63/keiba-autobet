@@ -75,7 +75,7 @@
 VPSの管理画面にある「コンソール」（ブラウザで黒い画面が開く）にログインし、次の1行を貼り付けてEnterを押します。
 
 ```
-curl -fsSL __INSTALL_URL__ | sudo bash
+curl -fsSL https://raw.githubusercontent.com/taroryu63/keiba-autobet/main/install.sh | sudo bash
 ```
 
 日本語で質問が出るので答えてください（アプリのパスワード、即PAT・SPAT4の番号）。
