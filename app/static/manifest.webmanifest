@@ -1,0 +1,13 @@
+{
+  "name": "競馬自動投票",
+  "short_name": "自動投票",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f3f4f1",
+  "theme_color": "#14532d",
+  "icons": [
+    {"src": "icon.svg", "sizes": "any", "type": "image/svg+xml"},
+    {"src": "icon-192.png", "sizes": "192x192", "type": "image/png"},
+    {"src": "icon-512.png", "sizes": "512x512", "type": "image/png"}
+  ]
+}

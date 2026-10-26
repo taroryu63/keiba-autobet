@@ -1,0 +1,127 @@
+"""画面操作エンジンを、本物のブラウザと模擬の投票サイトで確認する。"""
+import asyncio
+import json
+import os
+import shutil
+
+import pytest
+
+from app.bots.engine import SiteBot
+from app.config import config
+
+MOCK_HTML = """<!doctype html><meta charset="utf-8"><body>
+<div id="login"><input name="id"><button id="go" onclick="login()">ログイン</button></div>
+<div id="race" hidden>
+  <table><tr data-n="4"><td class="num">4</td><td class="odds">ODDS4</td></tr>
+         <tr data-n="5"><td class="num">5</td><td class="odds">8.0</td></tr></table>
+  <select id="type"><option>単勝</option><option>複勝</option><option>ワイド</option></select>
+  <span id="marks"></span>
+  <button id="m1-4" onclick="pick(1,4)">1-4</button><button id="m1-5" onclick="pick(1,5)">1-5</button>
+  <button id="m2-5" onclick="pick(2,5)">2-5</button>
+  <input id="units"><button id="set" onclick="setT()">セット</button>
+  <button id="end" onclick="document.getElementById('sum').textContent=total.toLocaleString()+'円'">入力終了</button>
+  <div id="sum"></div>
+  <button id="buy" onclick="buy()">購入する</button>
+  <button id="clear" onclick="total=0;sets=[];document.getElementById('sum').textContent=''">全て取消</button>
+</div>
+<div id="done" hidden>受付番号 0001</div>
+<script>
+let total=0, sets=[], cur=[];
+window.bought=[];
+function login(){document.getElementById('login').hidden=true;document.getElementById('race').hidden=false}
+function pick(c,n){cur.push(n)}
+function setT(){const u=+document.getElementById('units').value;total+=u*100;
+  sets.push([document.getElementById('type').value,cur.join('-'),u*100]);cur=[]}
+function buy(){window.bought=sets;document.getElementById('race').hidden=true;document.getElementById('done').hidden=false}
+</script>"""
+
+FLOW = {
+    "required": ["user"],
+    "timeout": 3000,
+    "login": [
+        {"do": "goto", "url": "{url}"},
+        {"do": "fill", "sel": "input[name='id']", "value": "{user}"},
+        {"do": "click", "sel": "#go"},
+    ],
+    "open_race": [{"do": "wait_for", "sel": "#race"}],
+    "read_odds": [{"do": "read", "sel": "tr[data-n='{num}'] .odds", "var": "odds"}],
+    "ticket": [
+        {"do": "select", "sel": "#type", "label": "{bet_type}"},
+        {"do": "pick"},
+        {"do": "fill", "sel": "#units", "value": "{units}"},
+        {"do": "click", "sel": "#set"},
+    ],
+    "pick": [{"do": "click", "sel": "#m{col}-{num}"}],
+    "confirm": [{"do": "click", "sel": "#end"}, {"do": "expect_text", "text": "{total_comma}円", "timeout": 1500}],
+    "purchase": [{"do": "click", "sel": "#buy"}],
+    "done_check": [{"do": "wait_for", "sel": "text=/受付番号/"}],
+    "cancel": [{"do": "click", "sel": "#clear", "optional": True, "timeout": 1000}],
+}
+
+ORDER = {"id": 1, "venue": "東京", "race_no": 11, "bet_type": "◎★", "points": 3, "total": 1500,
+         "unit_amount": 1200,
+         "tickets": [{"bet_type": "単勝", "combo": [4], "amount": 1200},
+                     {"bet_type": "ワイド", "combo": [4, 5], "amount": 100},
+                     {"bet_type": "複勝", "combo": [5], "amount": 200}]}
+
+chromium = os.environ.get("CHROMIUM_PATH") or shutil.which("chromium") or "/opt/pw-browsers/chromium-1243/chrome-linux64/chrome"
+
+
+@pytest.fixture
+def site(tmp_path, monkeypatch):
+    if not os.path.exists(chromium):
+        pytest.skip("Chromiumがありません")
+    monkeypatch.setattr(config, "data_dir", tmp_path)
+    monkeypatch.setattr(config, "chromium_path", chromium)
+    (tmp_path / "shots").mkdir()
+    (tmp_path / "selectors").mkdir()
+
+    def make(odds="3.4"):
+        page = tmp_path / "mock.html"
+        page.write_text(MOCK_HTML.replace("ODDS4", odds), encoding="utf-8")
+        flow = json.loads(json.dumps(FLOW).replace("{url}", page.as_uri()))
+        (tmp_path / "selectors" / "mock.json").write_text(json.dumps(flow), encoding="utf-8")
+        return SiteBot("mock", {"user": "me"})
+    return make
+
+
+async def _vote(bot, mode, rule=None):
+    async with bot:
+        await bot.login()
+        res = await bot.vote(ORDER, mode, rule)
+        bought = await bot.page.evaluate("window.bought")
+    return res, bought
+
+
+def test_live_buys_all_tickets(site):
+    res, bought = asyncio.run(_vote(site(), "live"))
+    assert res.status == "done", res.message
+    assert bought == [["単勝", "4", 1200], ["ワイド", "4-5", 100], ["複勝", "5", 200]]
+
+
+def test_rehearsal_never_buys(site):
+    res, bought = asyncio.run(_vote(site(), "rehearsal"))
+    assert res.status == "rehearsed" and bought == []
+
+
+def test_low_odds_drops_tansho(site):
+    rule = {"horse": 4, "min": 2.1, "unknown": "skip"}
+    res, bought = asyncio.run(_vote(site("2.0"), "live", rule))
+    assert res.status == "done" and res.odds == 2.0
+    assert bought == [["ワイド", "4-5", 100], ["複勝", "5", 200]]
+    res, bought = asyncio.run(_vote(site("3.4"), "live", rule))
+    assert [b[0] for b in bought] == ["単勝", "ワイド", "複勝"]
+
+
+def test_unreadable_odds_skips_tansho(site):
+    rule = {"horse": 4, "min": 2.1, "unknown": "skip"}
+    res, bought = asyncio.run(_vote(site("取消"), "live", rule))
+    assert [b[0] for b in bought] == ["ワイド", "複勝"]
+
+
+def test_total_mismatch_aborts_before_purchase(site):
+    bot = site()
+    bot.flow["ticket"][2]["value"] = "1"  # 金額を間違えて入力する画面の変化を再現
+    res, bought = asyncio.run(_vote(bot, "live"))
+    assert res.status == "failed" and bought == []
+    assert "購入前に中止" in res.message

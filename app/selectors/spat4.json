@@ -1,0 +1,178 @@
+{
+  "_note": "SPAT4（PC版）の操作手順。実際の画面では未検証のため、rehearsalモードとtools/calibrate.pyで画面に合わせて調整してください。",
+  "required": [
+    "subscriber",
+    "user_id",
+    "pin"
+  ],
+  "timeout": 15000,
+  "login": [
+    {
+      "do": "goto",
+      "url": "https://www.spat4.jp/keiba/pc"
+    },
+    {
+      "do": "fill",
+      "sel": "input[name='MEMBERNUMR']",
+      "value": "{subscriber}"
+    },
+    {
+      "do": "fill",
+      "sel": "input[name='MEMBERIDR']",
+      "value": "{user_id}"
+    },
+    {
+      "do": "click",
+      "sel": "input[type='submit'][value*='ログイン'], button:has-text('ログイン'), a:has-text('ログイン')"
+    },
+    {
+      "do": "fill",
+      "sel": "input[name='MEMBERPASSR']",
+      "value": "{pin}",
+      "optional": true,
+      "timeout": 3000
+    },
+    {
+      "do": "click",
+      "sel": "input[type='submit'], button:has-text('ログイン')",
+      "optional": true,
+      "timeout": 3000
+    },
+    {
+      "do": "wait_for",
+      "sel": "text=/投票/"
+    }
+  ],
+  "post_time": [
+    {
+      "do": "click",
+      "sel": "a:has-text('投票メニュー'), a:has-text('通常投票')",
+      "optional": true,
+      "timeout": 3000
+    },
+    {
+      "do": "click",
+      "sel": "a:has-text('{venue}')"
+    },
+    {
+      "do": "read_time",
+      "sel": "a:has-text('{race_no}R'), tr:has-text('{race_no}R')",
+      "var": "post_time"
+    }
+  ],
+  "open_race": [
+    {
+      "do": "click",
+      "sel": "a:has-text('投票メニュー'), a:has-text('通常投票')",
+      "optional": true,
+      "timeout": 3000
+    },
+    {
+      "do": "click",
+      "sel": "a:has-text('{venue}')"
+    },
+    {
+      "do": "click",
+      "sel": "a:has-text('{race_no}R'), a:has-text('{race_no}レース')"
+    }
+  ],
+  "read_odds": [
+    {
+      "do": "read",
+      "sel": "tr:has(td:text-is('{num}')) td.tanOdds, tr:has(td:text-is('{num}')) .odds",
+      "var": "odds",
+      "timeout": 4000
+    }
+  ],
+  "ticket": [
+    {
+      "do": "click",
+      "sel": "a:has-text('{bet_type}'), label:has-text('{bet_type}')"
+    },
+    {
+      "do": "click",
+      "sel": "a:has-text('{method_label}'), label:has-text('{method_label}')",
+      "optional": true,
+      "timeout": 2000
+    },
+    {
+      "do": "pick"
+    },
+    {
+      "do": "fill",
+      "sel": "input[name*='KINGAKU'], input[name*='kingaku']",
+      "value": "{units}"
+    },
+    {
+      "do": "click",
+      "sel": "input[value='セット'], button:has-text('セット'), a:has-text('セット')"
+    }
+  ],
+  "pick": [
+    {
+      "do": "click",
+      "sel": "input[name*='UMA{col}'][value='{num}'], tr:has(td:text-is('{num}')) input[type='checkbox'] >> nth={col}"
+    }
+  ],
+  "confirm": [
+    {
+      "do": "click",
+      "sel": "input[value*='確認'], button:has-text('確認'), a:has-text('投票内容確認')"
+    },
+    {
+      "do": "expect_text",
+      "text": "{total_comma}円"
+    },
+    {
+      "do": "fill",
+      "sel": "input[name='MEMBERPASSR'], input[type='password']",
+      "value": "{pin}",
+      "optional": true,
+      "timeout": 3000
+    }
+  ],
+  "purchase": [
+    {
+      "do": "click",
+      "sel": "input[value*='投票する'], button:has-text('投票する'), a:has-text('投票する')"
+    }
+  ],
+  "done_check": [
+    {
+      "do": "wait_for",
+      "sel": "text=/受付番号|受け付けました|投票を受け付け/",
+      "timeout": 20000
+    }
+  ],
+  "cancel": [
+    {
+      "do": "click",
+      "sel": "input[value*='取消'], a:has-text('全て取消')",
+      "optional": true,
+      "timeout": 3000
+    }
+  ],
+  "result": [
+    {
+      "do": "click",
+      "sel": "a:has-text('投票照会'), a:has-text('照会')"
+    },
+    {
+      "do": "has",
+      "sel": "tr:has-text('{venue}'):has-text('{race_no}R'):has-text('払戻')",
+      "var": "settled"
+    },
+    {
+      "do": "read",
+      "sel": "tr:has-text('{venue}'):has-text('{race_no}R') .payout",
+      "var": "payout",
+      "optional": true,
+      "timeout": 3000
+    },
+    {
+      "do": "has",
+      "sel": "tr:has-text('{venue}'):has-text('{race_no}R'):has-text('単勝'):has-text('的中')",
+      "var": "tansho_hit"
+    }
+  ]
+}

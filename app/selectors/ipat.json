@@ -1,0 +1,212 @@
+{
+  "_note": "即PAT（PC版）の操作手順。実際の画面では未検証のため、rehearsalモードとtools/calibrate.pyで画面に合わせて調整してください。",
+  "required": [
+    "inet_id",
+    "subscriber",
+    "pin",
+    "pars"
+  ],
+  "timeout": 15000,
+  "login": [
+    {
+      "do": "goto",
+      "url": "https://www.ipat.jra.go.jp/"
+    },
+    {
+      "do": "fill",
+      "sel": "input[name='inetid']",
+      "value": "{inet_id}"
+    },
+    {
+      "do": "click",
+      "sel": "a:has-text('ログイン'), button:has-text('ログイン'), .button"
+    },
+    {
+      "do": "fill",
+      "sel": "input[name='i']",
+      "value": "{subscriber}"
+    },
+    {
+      "do": "fill",
+      "sel": "input[name='p']",
+      "value": "{pin}"
+    },
+    {
+      "do": "fill",
+      "sel": "input[name='r']",
+      "value": "{pars}"
+    },
+    {
+      "do": "click",
+      "sel": "a:has-text('ネット投票メニューへ'), button:has-text('ネット投票メニューへ')"
+    },
+    {
+      "do": "click",
+      "sel": "button:has-text('OK')",
+      "optional": true,
+      "timeout": 3000
+    },
+    {
+      "do": "wait_for",
+      "sel": "button:has-text('通常投票')"
+    }
+  ],
+  "post_time": [
+    {
+      "do": "click",
+      "sel": "button:has-text('トップ'), a:has-text('トップ')",
+      "optional": true,
+      "timeout": 3000
+    },
+    {
+      "do": "click",
+      "sel": "button:has-text('通常投票')"
+    },
+    {
+      "do": "click",
+      "sel": "button:has-text('{venue}')"
+    },
+    {
+      "do": "read_time",
+      "sel": "button:has-text('{race_no}R')",
+      "var": "post_time"
+    }
+  ],
+  "open_race": [
+    {
+      "do": "click",
+      "sel": "button:has-text('トップ'), a:has-text('トップ')",
+      "optional": true,
+      "timeout": 3000
+    },
+    {
+      "do": "click",
+      "sel": "button:has-text('通常投票')"
+    },
+    {
+      "do": "click",
+      "sel": "button:has-text('{venue}')"
+    },
+    {
+      "do": "click",
+      "sel": "button:has-text('{race_no}R')"
+    }
+  ],
+  "read_odds": [
+    {
+      "do": "read",
+      "sel": "tr:has(td.num:text-is('{num}')) td.odds_tan, tr:has(td.num:text-is('{num}')) .odds",
+      "var": "odds",
+      "timeout": 4000
+    }
+  ],
+  "ticket": [
+    {
+      "do": "select",
+      "sel": "select#bet-basic-type",
+      "label": "{bet_type}"
+    },
+    {
+      "do": "select",
+      "sel": "select#bet-basic-method",
+      "label": "{method_label}",
+      "optional": true,
+      "timeout": 2000
+    },
+    {
+      "do": "pick"
+    },
+    {
+      "do": "fill",
+      "sel": "input[ng-model='vm.nUnit'], input.amount",
+      "value": "{units}"
+    },
+    {
+      "do": "click",
+      "sel": "button:has-text('セット')"
+    }
+  ],
+  "pick": [
+    {
+      "do": "click",
+      "sel": "#no{num}-{col}, table.marks tr:has(td.num:text-is('{num}')) td.mark:nth-of-type({col}) label"
+    }
+  ],
+  "confirm": [
+    {
+      "do": "click",
+      "sel": "button:has-text('入力終了')"
+    },
+    {
+      "do": "expect_text",
+      "text": "{total_comma}円"
+    },
+    {
+      "do": "fill",
+      "sel": "input[ng-model='vm.cAmountTotal'], input[placeholder*='合計']",
+      "value": "{total}"
+    }
+  ],
+  "purchase": [
+    {
+      "do": "click",
+      "sel": "button:has-text('購入する')"
+    },
+    {
+      "do": "click",
+      "sel": "button:has-text('OK')",
+      "optional": true,
+      "timeout": 5000
+    }
+  ],
+  "done_check": [
+    {
+      "do": "wait_for",
+      "sel": "text=/受付番号|受け付けました|受付しました/",
+      "timeout": 20000
+    }
+  ],
+  "cancel": [
+    {
+      "do": "click",
+      "sel": "button:has-text('全て取消'), button:has-text('全取消')",
+      "optional": true,
+      "timeout": 3000
+    },
+    {
+      "do": "click",
+      "sel": "button:has-text('OK')",
+      "optional": true,
+      "timeout": 3000
+    }
+  ],
+  "result": [
+    {
+      "do": "click",
+      "sel": "button:has-text('照会'), a:has-text('照会')"
+    },
+    {
+      "do": "click",
+      "sel": "button:has-text('投票履歴'), a:has-text('当日')",
+      "optional": true,
+      "timeout": 3000
+    },
+    {
+      "do": "has",
+      "sel": "tr:has-text('{venue}'):has-text('{race_no}R'):has-text('払戻')",
+      "var": "settled"
+    },
+    {
+      "do": "read",
+      "sel": "tr:has-text('{venue}'):has-text('{race_no}R') .payout",
+      "var": "payout",
+      "optional": true,
+      "timeout": 3000
+    },
+    {
+      "do": "has",
+      "sel": "tr:has-text('{venue}'):has-text('{race_no}R'):has-text('単勝'):has-text('的中')",
+      "var": "tansho_hit"
+    }
+  ]
+}
