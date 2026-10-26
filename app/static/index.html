@@ -104,6 +104,21 @@
         <p id="settings-msg" class="muted"></p>
       </form>
       <div class="card">
+        <h2>接続テスト</h2>
+        <p class="muted">投票サイトにログインして、購入の直前まで試します。<b>購入はしません。</b>×が出たら、この画面のスクショを送ってください。</p>
+        <label>投票サイト
+          <select id="chk-site"><option value="ipat">即PAT（中央）</option><option value="spat4">SPAT4（地方）</option></select>
+        </label>
+        <div class="row">
+          <label style="flex:1">開催場<select id="chk-venue"></select></label>
+          <label style="width:80px">レース<input id="chk-race" type="number" min="1" max="12" value="11"></label>
+          <label style="width:80px">馬番<input id="chk-horse" type="number" min="1" max="18" value="1"></label>
+        </div>
+        <p class="muted">その日に発売中のレースを選んでください。</p>
+        <button id="btn-check" class="primary">テストする</button>
+        <div id="chk-out"></div>
+      </div>
+      <div class="card">
         <h2>ログ</h2>
         <div id="logs" class="logs"></div>
       </div>

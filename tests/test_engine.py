@@ -125,3 +125,14 @@ def test_total_mismatch_aborts_before_purchase(site):
     res, bought = asyncio.run(_vote(bot, "live"))
     assert res.status == "failed" and bought == []
     assert "購入前に中止" in res.message
+
+
+def test_connection_check_stops_at_failure(site):
+    from app.calibration import run_check
+    bot = site()
+    steps = asyncio.run(run_check(bot, "東京", 11, 5))
+    assert [s["ok"] for s in steps] == [True] * 6, steps
+    bot = site()
+    bot.flow["ticket"][0]["sel"] = "#nothing"
+    steps = asyncio.run(run_check(bot, "東京", 11, 5))
+    assert [s["stage"] for s in steps][-1] == "ticket" and not steps[-1]["ok"]

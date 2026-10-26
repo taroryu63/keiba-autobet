@@ -458,6 +458,29 @@ def put_settings(body: SettingsIn):
     return db().save_settings(vals)
 
 
+class CheckIn(BaseModel):
+    site: str = Field(pattern="^(ipat|spat4)$")
+    venue: str
+    race_no: int = Field(ge=1, le=12)
+    horse: int = Field(ge=1, le=MAX_HORSE)
+
+
+@app.post("/api/check", dependencies=[Depends(auth)])
+async def check_site(body: CheckIn):
+    """接続テスト（購入はしない）。"""
+    from .calibration import run_check
+    from .scheduler import credentials
+
+    creds = credentials(body.site)
+    if not all(creds.values()):
+        raise HTTPException(400, "ログイン情報がサーバーに設定されていません（セットアップをやり直してください）")
+    runner = state["runner"]
+    async with runner._lock:  # 投票と同時に動かない
+        steps = await run_check(runner.bot_factory(body.site), body.venue, body.race_no, body.horse)
+    db().log(f"接続テスト {body.site}: " + " / ".join(f"{x['label']}{'○' if x['ok'] else '×'}" for x in steps))
+    return {"steps": steps, "ok": all(x["ok"] for x in steps) and len(steps) == 6}
+
+
 @app.get("/api/logs", dependencies=[Depends(auth)])
 def logs():
     return db().logs(100)

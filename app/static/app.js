@@ -340,6 +340,7 @@ function renderSettings() {
     else el.value = v;
   }
   f.querySelector('input[value="live"]').disabled = !S.allow_live;
+  fillCheckVenues();
   $("#mode-help").textContent = MODE_HELP[s.mode] + (S.allow_live ? "" : "（本番はサーバーの設定で有効にすると選べます）");
 }
 
@@ -369,6 +370,38 @@ async function loadLogs() {
   const logs = await api("/api/logs");
   $("#logs").innerHTML = logs.map((l) => `<div><span>${esc(l.at.slice(5, 16).replace("T", " "))}</span> ${esc(l.text)}</div>`).join("") || "ログはありません";
 }
+
+// --- 接続テスト ---
+function fillCheckVenues() {
+  if (!S) return;
+  const org = $("#chk-site").value === "ipat" ? "jra" : "nar";
+  const sel = $("#chk-venue");
+  if (sel.dataset.org === org) return;
+  sel.dataset.org = org;
+  sel.innerHTML = S.venues[org].map((v) => `<option>${esc(v)}</option>`).join("");
+}
+$("#chk-site").addEventListener("change", fillCheckVenues);
+$("#btn-check").addEventListener("click", async () => {
+  const btn = $("#btn-check");
+  btn.disabled = true;
+  btn.textContent = "テスト中…（1分ほどかかります）";
+  $("#chk-out").innerHTML = "";
+  try {
+    const r = await api("/api/check", { body: {
+      site: $("#chk-site").value, venue: $("#chk-venue").value,
+      race_no: Number($("#chk-race").value), horse: Number($("#chk-horse").value) } });
+    $("#chk-out").innerHTML = `<p class="${r.ok ? "pos" : "neg"}"><b>${r.ok ? "すべて成功しました（購入はしていません）" : "途中で止まりました"}</b></p>`
+      + r.steps.map((x) => `<div class="order"><div class="head"><span>${x.ok ? "○" : "×"} ${esc(x.label)}</span></div>`
+        + (x.info ? `<div class="msg ${x.ok ? "" : "neg"}">${esc(x.info)}</div>` : "")
+        + (x.shot ? `<img src="/api/shots/${encodeURIComponent(x.shot)}" alt="${esc(x.label)}の画面" style="width:100%;border:1px solid var(--line);border-radius:8px;margin-top:6px">` : "")
+        + `</div>`).join("");
+  } catch (err) {
+    $("#chk-out").innerHTML = `<p class="err">${esc(err.message)}</p>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "テストする";
+  }
+});
 
 // --- 起動 ---
 async function start() {
