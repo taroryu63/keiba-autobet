@@ -494,4 +494,13 @@ def shot(name: str):
     return FileResponse(path)
 
 
+@app.middleware("http")
+async def no_stale_pages(request: Request, call_next):
+    """スマホのブラウザが古い画面を使い続けないよう、毎回サーバーに確認させる。"""
+    response = await call_next(request)
+    if not request.url.path.startswith("/api/"):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
 app.mount("/", StaticFiles(directory=ROOT / "app" / "static", html=True), name="static")

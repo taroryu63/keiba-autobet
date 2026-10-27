@@ -439,5 +439,7 @@ async function start() {
 $("#date").addEventListener("change", load);
 setInterval(() => { if (!document.hidden && !$("#app").hidden && !$("#dlg").open) load().catch(() => {}); }, 20000);
 document.addEventListener("visibilitychange", () => { if (!document.hidden && !$("#app").hidden) load().catch(() => {}); });
-if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("sw.js", { updateViaCache: "none" }).then((r) => r.update()).catch(() => {});
+}
 start();
