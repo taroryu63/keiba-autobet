@@ -39,8 +39,18 @@ fi
 cd "$DIR"
 mkdir -p data
 
-if [ ! -f .env ]; then
-  say "3/4 いくつか質問します（分からないものは空のままEnterで飛ばせます。あとで設定し直せます）"
+REDO=y
+if [ -f .env ]; then
+  ask REDO "パスワードや即PAT・SPAT4の番号を入れ直しますか？（入れ直すなら y、そのままならEnter）"
+fi
+if [ "$REDO" = y ] || [ "$REDO" = Y ]; then
+  # 入れ直すときも、アプリのアドレス・通知のトピック名・ログインの鍵は前のものを使う
+  OLD_SECRET=$(grep '^SECRET_KEY=' .env 2>/dev/null | cut -d= -f2- || true)
+  OLD_DOMAIN=$(grep '^DOMAIN=' .env 2>/dev/null | cut -d= -f2- || true)
+  OLD_NTFY=$(grep '^NTFY_URL=' .env 2>/dev/null | cut -d= -f2- || true)
+  OLD_LIVE=$(grep '^ALLOW_LIVE=' .env 2>/dev/null | cut -d= -f2- || true)
+  say "3/4 いくつか質問します（分からないものは空のままEnterで飛ばせます。あとで入れ直せます）"
+  echo "入力を間違えたら、Enterを押す前ならBackspaceで消せます"
   while :; do
     ask APP_PASSWORD "アプリのログインパスワードを決めてください（8文字以上）" 1
     [ ${#APP_PASSWORD} -ge 8 ] && break
@@ -58,16 +68,19 @@ if [ ! -f .env ]; then
   ask SPAT4_USER_ID "利用者ID"
   ask SPAT4_PIN "暗証番号" 1
 
-  IP=$(curl -4 -fsS https://api.ipify.org || hostname -I | awk '{print $1}')
-  DOMAIN="${IP//./-}.sslip.io"   # IPアドレスから自動で決まる無料のアドレス（HTTPSにする用）
-  TOPIC="keiba-$(openssl rand -hex 12)"
+  if [ -n "$OLD_DOMAIN" ]; then
+    DOMAIN=$OLD_DOMAIN
+  else
+    IP=$(curl -4 -fsS https://api.ipify.org || hostname -I | awk '{print $1}')
+    DOMAIN="${IP//./-}.sslip.io"   # IPアドレスから自動で決まる無料のアドレス（HTTPSにする用）
+  fi
   umask 077
   cat > .env <<EOF
 APP_PASSWORD=$APP_PASSWORD
-SECRET_KEY=$(openssl rand -hex 32)
+SECRET_KEY=${OLD_SECRET:-$(openssl rand -hex 32)}
 DOMAIN=$DOMAIN
-ALLOW_LIVE=
-NTFY_URL=https://ntfy.sh/$TOPIC
+ALLOW_LIVE=$OLD_LIVE
+NTFY_URL=${OLD_NTFY:-https://ntfy.sh/keiba-$(openssl rand -hex 12)}
 IPAT_INET_ID=$IPAT_INET_ID
 IPAT_SUBSCRIBER_NO=$IPAT_SUBSCRIBER_NO
 IPAT_PIN=$IPAT_PIN
@@ -78,11 +91,11 @@ SPAT4_PIN=$SPAT4_PIN
 EOF
   chmod 600 .env
 else
-  say "3/4 設定はそのまま使います（やり直すときは sudo rm /opt/keiba/.env してから再実行）"
+  say "3/4 設定はそのまま使います"
 fi
 
 say "4/4 アプリを起動しています（初回は5〜10分かかります）"
-docker compose up -d --build
+docker compose up -d --build --force-recreate
 
 DOMAIN=$(grep '^DOMAIN=' .env | cut -d= -f2)
 TOPIC=$(grep '^NTFY_URL=' .env | sed 's#.*/##')
