@@ -1,5 +1,5 @@
 {
-  "_note": "SPAT4（PC版）の操作手順。ログインと開催場・レース一覧（2026/10の画面）は確認済み。",
+  "_note": "SPAT4（PC版）の操作手順。ログイン・開催場・レース一覧・出走表（2026/10の画面）は確認済み。",
   "required": [
     "subscriber",
     "user_id",
@@ -78,6 +78,10 @@
     {
       "do": "click",
       "sel": "tr:has(td :text-is('{race_no}R')) :text-is('{race_no}R'), tr td:text-is('{race_no}R')"
+    },
+    {
+      "do": "click",
+      "sel": "input[value*='マークカード'], a:has-text('マークカード投票'), button:has-text('マークカード投票')"
     }
   ],
   "read_odds": [
