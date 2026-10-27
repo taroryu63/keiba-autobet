@@ -273,6 +273,23 @@ class SiteBot:
         got = await self.read_numbers("result", vars, ("settled", "winner", "payout", "tansho_hit"))
         return {k: int(v) for k, v in got.items()}
 
+    async def _enter(self, tickets: list[dict], base: dict) -> None:
+        """馬券を入力する（購入はしない）。base の total などはこの分の金額に書き換える。"""
+        total = sum(t["amount"] for t in tickets)
+        base.update(total=total, total_comma=f"{total:,}", points=len(tickets))
+        # マークカード式のサイトは、1画面にcards_per_page枚のカードがあり、1点ごとに次のカードを使う
+        per_page = self.flow.get("cards_per_page", 0)
+        for i, t in enumerate(tickets):
+            if per_page and i and i % per_page == 0:
+                await self.run("next_cards", base)
+            combo = t["combo"]
+            targets = [(1, combo[0])] if len(combo) == 1 else [(j + 1, n) for j, n in enumerate(combo)]
+            await self.run("ticket", {**base, "bet_type": t["bet_type"],
+                                      "bet_label": self.flow.get("bet_labels", {}).get(t["bet_type"], t["bet_type"]),
+                                      "card": i % per_page + 1 if per_page else 1,
+                                      "units": t["amount"] // 100,
+                                      "amount": t["amount"], "combo": "-".join(map(str, combo))}, targets)
+
     async def vote(self, order: dict, mode: str, odds_rule: dict | None = None) -> VoteResult:
         """1件の買い目を入力し、mode=live のときだけ購入ボタンを押す。
 
@@ -288,6 +305,7 @@ class SiteBot:
             "method_label": METHOD_LABELS["normal"],
         }
         purchase_clicked = False
+        bought = 0
         odds = None
         try:
             await self.run("open_race", base)
@@ -304,30 +322,29 @@ class SiteBot:
                     why = "オッズを読めない" if odds is None else f"単勝{odds}倍"
                     return VoteResult("skipped", f"{why}のため見送りました", odds=odds, tickets=[])
             total = sum(t["amount"] for t in tickets)
-            base.update(total=total, total_comma=f"{total:,}", points=len(tickets))
-            # マークカード式のサイトは、1画面にcards_per_page枚のカードがあり、1点ごとに次のカードを使う
-            per_page = self.flow.get("cards_per_page", 0)
-            for i, t in enumerate(tickets):
-                if per_page and i and i % per_page == 0:
-                    await self.run("next_cards", base)
-                combo = t["combo"]
-                targets = [(1, combo[0])] if len(combo) == 1 else [(i + 1, n) for i, n in enumerate(combo)]
-                await self.run("ticket", {**base, "bet_type": t["bet_type"],
-                                          "bet_label": self.flow.get("bet_labels", {}).get(t["bet_type"], t["bet_type"]),
-                                          "card": i % per_page + 1 if per_page else 1,
-                                          "units": t["amount"] // 100,
-                                          "amount": t["amount"], "combo": "-".join(map(str, combo))}, targets)
-            await self.run("confirm", base)  # ここで合計金額が一致するか確認する
+            # 1回の投票で入れられる点数に上限があるサイトは、分けて投票する
+            limit = self.flow.get("max_tickets_per_vote") or len(tickets)
+            batches = [tickets[i:i + limit] for i in range(0, len(tickets), limit)]
+            bought = 0
+            for n, batch in enumerate(batches):
+                if n:
+                    await self.run("open_race", base)
+                await self._enter(batch, base)
+                await self.run("confirm", base)  # ここで合計金額が一致するか確認する
+                if mode != "live":
+                    await self.run("cancel", base)
+                    continue
+                purchase_clicked = True
+                await self.run("purchase", base)
+                await self.run("done_check", base)
+                bought += 1
+            split = f"、{len(batches)}回に分けて" if len(batches) > 1 else ""
             if mode != "live":
                 shot = await self.screenshot(f"order{order['id']}-rehearsal")
-                await self.run("cancel", base)
-                return VoteResult("rehearsed", f"購入直前まで入力できました（{total:,}円、購入はしていません）",
+                return VoteResult("rehearsed", f"購入直前まで入力できました（{total:,}円{split}、購入はしていません）",
                                   shot, tickets, odds)
-            purchase_clicked = True
-            await self.run("purchase", base)
-            await self.run("done_check", base)
             shot = await self.screenshot(f"order{order['id']}-done")
-            return VoteResult("done", f"投票しました（{len(tickets)}点 {total:,}円）", shot, tickets, odds)
+            return VoteResult("done", f"投票しました（{len(tickets)}点 {total:,}円{split}）", shot, tickets, odds)
         except Exception as e:
             shot = await self.screenshot(f"order{order['id']}-error")
             if not purchase_clicked:
@@ -337,6 +354,7 @@ class SiteBot:
                 except Exception:
                     pass
             if purchase_clicked:
-                return VoteResult("unknown", f"購入ボタンを押した後にエラー。購入履歴を確認してください: {e}",
+                part = f"（分けた投票のうち{bought}回分は購入済み）" if bought else ""
+                return VoteResult("unknown", f"購入ボタンを押した後にエラー{part}。購入履歴を確認してください: {e}",
                                   shot, tickets, odds)
             return VoteResult("failed", f"購入前に中止しました: {e}", shot, tickets, odds)

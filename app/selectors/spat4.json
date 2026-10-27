@@ -217,5 +217,6 @@
       "do": "wait",
       "ms": 800
     }
-  ]
+  ],
+  "max_tickets_per_vote": 6
 }

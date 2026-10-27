@@ -11,9 +11,12 @@ STAGES = [
     ("probe", "流しの画面を見る（マークはしません）"),
     ("ticket", "馬券の入力（複勝100円）"),
     ("confirm", "確認画面（合計金額）"),
+    ("many", "6点を超えて入れられるか見る（購入はしません）"),
 ]
 
-OPTIONAL = {"time", "odds", "probe"}
+OPTIONAL = {"time", "odds", "probe", "many"}
+# 確認画面で止まっても、最後の「6点を超えて」は見ておく（別の画面で試すので）
+ALWAYS = {"many"}
 
 
 async def run_check(bot: SiteBot, venue: str, race_no: int, horse: int) -> list[dict]:
@@ -30,10 +33,16 @@ async def run_check(bot: SiteBot, venue: str, race_no: int, horse: int) -> list[
         "probe": lambda: bot.run("probe", vars),
         "ticket": lambda: bot.run("ticket", vars, [(1, horse)]),
         "confirm": lambda: bot.run("confirm", vars),
+        "many": lambda: _fill_all_cards(bot, vars, horse),
     }
     out: list[dict] = []
     async with bot:
+        stopped = False
         for stage, label in STAGES:
+            if stopped and stage not in ALWAYS:
+                continue
+            if stage == "many" and not bot.flow.get("cards_per_page"):
+                continue
             try:
                 got = await calls[stage]()
                 info = f"読み取り: {got}" if got else ""
@@ -44,7 +53,7 @@ async def run_check(bot: SiteBot, venue: str, race_no: int, horse: int) -> list[
                 continue  # 見るものがないサイトは飛ばす
             shot = await bot.screenshot(f"check-{stage}")
             parts = ""
-            if not ok or stage == "probe":
+            if not ok or stage in ("probe", "many"):
                 await bot.dump(f"check-{stage}")
                 try:
                     parts = await bot.elements()
@@ -58,9 +67,22 @@ async def run_check(bot: SiteBot, venue: str, race_no: int, horse: int) -> list[
                     pass
             # 発走時刻とオッズは読めなくても投票は進められるので、次の段階も試す
             if not ok and stage not in OPTIONAL:
-                break
+                stopped = True
         try:
             await bot.run("cancel", vars)
         except Exception:
             pass
     return out
+
+
+async def _fill_all_cards(bot: SiteBot, vars: dict, horse: int) -> str:
+    """レースを開き直して、全部のカードに複勝をマークする。そのあとの画面（7枚目が出るか）を見るため。"""
+    try:
+        await bot.run("cancel", vars)
+    except Exception:
+        pass
+    await bot.run("open_race", vars)
+    n = bot.flow["cards_per_page"]
+    for card in range(1, n + 1):
+        await bot.run("ticket", {**vars, "card": card}, [(1, horse)])
+    return f"{n}枚のカードにマークしました"

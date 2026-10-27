@@ -24,7 +24,7 @@ MOCK_HTML = """<!doctype html><meta charset="utf-8"><body>
   <button id="buy" onclick="buy()">購入する</button>
   <button id="clear" onclick="total=0;sets=[];document.getElementById('sum').textContent=''">全て取消</button>
 </div>
-<div id="done" hidden>受付番号 0001</div>
+<div id="done" hidden>受付番号 0001<button id="again" onclick="again()">続けて投票</button></div>
 <script>
 let total=0, sets=[], cur=[];
 window.bought=[];
@@ -32,7 +32,10 @@ function login(){document.getElementById('login').hidden=true;document.getElemen
 function pick(c,n){cur.push(n)}
 function setT(){const u=+document.getElementById('units').value;total+=u*100;
   sets.push([document.getElementById('type').value,cur.join('-'),u*100]);cur=[]}
-function buy(){window.bought=sets;document.getElementById('race').hidden=true;document.getElementById('done').hidden=false}
+function buy(){window.bought=window.bought.concat(sets);window.buys=(window.buys||0)+1;
+  document.getElementById('race').hidden=true;document.getElementById('done').hidden=false}
+function again(){total=0;sets=[];document.getElementById('sum').textContent='';
+  document.getElementById('race').hidden=false;document.getElementById('done').hidden=true}
 </script>"""
 
 FLOW = {
@@ -43,7 +46,8 @@ FLOW = {
         {"do": "fill", "sel": "input[name='id']", "value": "{user}"},
         {"do": "click", "sel": "a.go"},
     ],
-    "open_race": [{"do": "wait_for", "sel": "#race"}],
+    "open_race": [{"do": "click", "sel": "#again", "optional": True, "timeout": 300},
+                  {"do": "wait_for", "sel": "#race"}],
     "read_odds": [{"do": "read", "sel": "tr[data-n='{num}'] .odds", "var": "odds"}],
     "ticket": [
         {"do": "select", "sel": "#type", "label": "{bet_type}"},
@@ -212,3 +216,18 @@ def test_connection_check_lists_parts_on_failure(site):
     assert 'button#m1-5 onclick=pick(1,5) "1-5"' in parts
     units = next(line for line in parts.splitlines() if "input#units" in line)
     assert "value" not in units  # 入力欄の値は出さない
+
+
+def test_splits_into_batches(site):
+    bot = site()
+    bot.flow["max_tickets_per_vote"] = 2
+
+    async def go():
+        async with bot:
+            await bot.login()
+            res = await bot.vote(ORDER, "live")
+            return res, await bot.page.evaluate("window.bought"), await bot.page.evaluate("window.buys")
+    res, bought, buys = asyncio.run(go())
+    assert res.status == "done" and "2回に分けて" in res.message
+    assert buys == 2
+    assert bought == [["単勝", "4", 1200], ["ワイド", "4-5", 100], ["複勝", "5", 200]]
