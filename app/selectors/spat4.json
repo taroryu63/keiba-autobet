@@ -1,5 +1,5 @@
 {
-  "_note": "SPAT4（PC版）の操作手順。ログイン〜マークカードの券種・馬番（2026/10の画面）は確認済み。金額入力から先は未確認。",
+  "_note": "SPAT4（PC版）の操作手順。ログイン〜マークカード・金額入力の画面（2026/10）は確認済み。確認画面から先は未確認。",
   "required": [
     "subscriber",
     "user_id",
@@ -47,6 +47,9 @@
   ],
   "post_time": [
     {
+      "do": "main_window"
+    },
+    {
       "do": "click",
       "sel": "text=\"{venue}\"",
       "optional": true,
@@ -64,6 +67,9 @@
     }
   ],
   "open_race": [
+    {
+      "do": "main_window"
+    },
     {
       "do": "click",
       "sel": "text=\"{venue}\"",
@@ -109,30 +115,34 @@
   "pick": [
     {
       "do": "click",
-      "sel": ":nth-match(button.num.no-{num}, {card})"
+      "sel": "button.num.no-{num} >> visible=true >> nth={card0}"
     }
   ],
   "confirm": [
     {
       "do": "click",
-      "sel": ":text-is('投票金額入力へ')"
+      "sel": ":text-is('投票内容確認へ')"
     },
     {
       "do": "wait",
       "ms": 1000
     },
     {
-      "do": "fill",
-      "sel": "input[type='text'], input[type='tel'], input[type='number']",
-      "value": "{units}"
-    },
-    {
       "do": "click",
-      "sel": ":text-is('投票内容確認へ')"
+      "sel": ":text-is('OK')",
+      "optional": true,
+      "timeout": 1000
     },
     {
       "do": "expect_text",
       "text": "{total_comma}円"
+    },
+    {
+      "do": "fill",
+      "sel": "input[type='password']",
+      "value": "{pin}",
+      "optional": true,
+      "timeout": 3000
     }
   ],
   "purchase": [
@@ -187,36 +197,63 @@
     "3連単": "三連単"
   },
   "cards_per_page": 6,
-  "next_cards": [],
-  "probe": [
+  "entry_mode": "groups",
+  "cards_tab": [
+    {
+      "do": "click",
+      "sel": ":text-is('単･複･連勝複式'), :text-is('単・複・連勝複式')",
+      "optional": true,
+      "timeout": 3000
+    },
+    {
+      "do": "wait",
+      "ms": 500
+    }
+  ],
+  "nagashi": [
     {
       "do": "click",
       "sel": ":text-is('連複流し')"
     },
     {
       "do": "wait",
-      "ms": 800
+      "ms": 500
     },
     {
       "do": "click",
-      "sel": ":text-is('ワイド')",
-      "optional": true,
-      "timeout": 3000
+      "sel": ":text-is('{bet_label}')"
+    },
+    {
+      "do": "wait",
+      "ms": 300
+    }
+  ],
+  "to_amount": [
+    {
+      "do": "click",
+      "sel": ":text-is('投票金額入力へ')"
+    },
+    {
+      "do": "wait_for",
+      "sel": "text=投票金額を入力してください"
+    }
+  ],
+  "amount_row_offset": 2,
+  "amount": [
+    {
+      "do": "fill",
+      "sel": "input[type='text'], input[type='tel'], input[type='number'], input:not([type]) >> visible=true >> nth={row_input}",
+      "value": "{units}"
+    }
+  ],
+  "add_more": [
+    {
+      "do": "click",
+      "sel": ":text-is('買い目を追加する')"
     },
     {
       "do": "wait",
       "ms": 800
     }
-  ],
-  "probe_back": [
-    {
-      "do": "click",
-      "sel": ":text-is('単･複･連勝複式'), :text-is('単・複・連勝複式')"
-    },
-    {
-      "do": "wait",
-      "ms": 800
-    }
-  ],
-  "max_tickets_per_vote": 6
+  ]
 }

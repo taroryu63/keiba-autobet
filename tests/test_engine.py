@@ -16,8 +16,7 @@ MOCK_HTML = """<!doctype html><meta charset="utf-8"><body>
          <tr data-n="5"><td class="num">5</td><td class="odds">8.0</td></tr></table>
   <select id="type"><option>単勝</option><option>複勝</option><option>ワイド</option></select>
   <span id="marks"></span>
-  <button id="m1-4" onclick="pick(1,4)">1-4</button><button id="m1-5" onclick="pick(1,5)">1-5</button>
-  <button id="m2-5" onclick="pick(2,5)">2-5</button>
+  MARKS
   <input id="units"><button id="set" onclick="setT()">セット</button>
   <button id="end" onclick="document.getElementById('sum').textContent=total.toLocaleString()+'円'">入力終了</button>
   <div id="sum"></div>
@@ -37,6 +36,8 @@ function buy(){window.bought=window.bought.concat(sets);window.buys=(window.buys
 function again(){total=0;sets=[];document.getElementById('sum').textContent='';
   document.getElementById('race').hidden=false;document.getElementById('done').hidden=true}
 </script>"""
+MOCK_HTML = MOCK_HTML.replace("MARKS", "".join(
+    f'<button id="m{c}-{n}" onclick="pick({c},{n})">{c}-{n}</button>' for c in (1, 2) for n in range(1, 17)))
 
 FLOW = {
     "required": ["user"],
@@ -134,20 +135,22 @@ def test_total_mismatch_aborts_before_purchase(site):
 def test_connection_check_stops_at_failure(site):
     from app.calibration import run_check
     bot = site()
-    steps = asyncio.run(run_check(bot, "東京", 11, 5))
-    assert [s["ok"] for s in steps] == [True] * 6, steps
+    steps = asyncio.run(run_check(bot, "東京", 11, 4))
+    assert [s["ok"] for s in steps] == [True] * 7, steps
     bot = site()
     bot.flow["ticket"][0]["sel"] = "#nothing"
+    bot.flow["ticket"][0]["timeout"] = 500
     steps = asyncio.run(run_check(bot, "東京", 11, 5))
-    assert [s["stage"] for s in steps][-1] == "ticket" and not steps[-1]["ok"]
+    # 馬券の入力で止まり、確認画面は飛ばし、最後の「土日の買い方」だけは試す
+    assert [(s["stage"], s["ok"]) for s in steps][-2:] == [("ticket", False), ("many", False)]
 
 
 def test_connection_check_continues_past_time(site):
     from app.calibration import run_check
     bot = site()
     bot.flow["post_time"] = [{"do": "click", "sel": "#nothing", "timeout": 500}]
-    steps = asyncio.run(run_check(bot, "東京", 11, 5))
-    assert [s["ok"] for s in steps] == [True, False, True, True, True, True]
+    steps = asyncio.run(run_check(bot, "東京", 11, 4))
+    assert [s["ok"] for s in steps] == [True, False, True, True, True, True, True]
 
 
 def test_follows_new_window(site, tmp_path):

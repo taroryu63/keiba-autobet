@@ -1,0 +1,151 @@
+"""SPAT4のマークカード投票に似せた模擬サイトで、本物の手順ファイル（spat4.json）の入力の流れを確かめる。
+
+模擬サイトは、スクショと部品の一覧から分かった作りをまねている:
+- 券種ボタン（単勝・複勝・ワイド…）、6枚のカードに button.num.no-N
+- 「連複流し」タブ: 軸と相手の2枚のカード
+- 「投票金額入力へ」→ 左に入力欄2つ（一件ごと・全て同じ）、右の表の各行に金額欄
+- 「買い目を追加する」でカードに戻る（入力済みの行は残る）
+- 「投票内容確認へ」→ 合計金額を表示
+"""
+import asyncio
+import json
+import os
+from pathlib import Path
+
+import pytest
+
+from app.bots.engine import SiteBot, wide_nagashi
+from app.calibration import sample_order
+from app.config import config
+
+from .test_engine import chromium
+
+MOCK = """<!doctype html><meta charset="utf-8"><body>
+<div id="cards">
+  <div class="tabs"><a onclick="tab('c')">単･複･連勝複式</a><a onclick="tab('n')">連複流し</a></div>
+  <div class="types"><span class="t">単勝</span><span class="t">複勝</span><span class="t">ワイド</span></div>
+  <div id="tab-c"></div><div id="tab-n" style="display:none"></div>
+  <span id="goamount">投票金額入力へ</span>
+</div>
+<div id="amount" style="display:none">
+  <p>投票金額を入力してください</p>
+  <div class="left"><input type="text" value="1"><span>セット</span><input type="text"><span>セット</span></div>
+  <table id="rows"></table>
+  <span id="addmore">買い目を追加する</span><span id="toconfirm">投票内容確認へ</span>
+</div>
+<div id="confirm" style="display:none"><p id="sum"></p><input type="password" id="pin"></div>
+<script>
+let mode = 'c', type = null, marks = [], rows = [];
+window.log = [];
+function tab(m) { mode = m; document.getElementById('tab-c').style.display = m === 'c' ? '' : 'none';
+  document.getElementById('tab-n').style.display = m === 'n' ? '' : 'none'; marks = []; }
+function card(box, k) {
+  const d = document.createElement('div');
+  for (let n = 1; n <= 16; n++) {
+    const b = document.createElement('button'); b.className = 'btn num no-' + n; b.textContent = n;
+    b.onclick = () => { (marks[k] ||= []).push(n); }; d.appendChild(b);
+  }
+  box.appendChild(d);
+}
+for (let k = 0; k < 6; k++) card(document.getElementById('tab-c'), k);
+card(document.getElementById('tab-n'), 0); card(document.getElementById('tab-n'), 1);
+document.querySelectorAll('.t').forEach((e) => e.onclick = () => { type = e.textContent;
+  if (mode === 'c') { const k = marks.length; marks[k] = []; window.pending = k; } });
+// 複・連勝複式: 券種を押すと次のカードに入る。カードの番号は押した順に関係なく button の位置で決まる
+document.getElementById('tab-c').addEventListener('click', (e) => {
+  const b = e.target.closest('button'); if (!b) return;
+  const k = [...document.getElementById('tab-c').children].indexOf(b.parentElement);
+  window.log.push([type, k, +b.textContent]);
+});
+document.getElementById('goamount').onclick = () => {
+  if (mode === 'c') {
+    const byCard = {};
+    for (const [t, k, n] of window.log) (byCard[k] ||= { t, nums: [] }).nums.push(n);
+    Object.keys(byCard).sort().forEach((k) => rows.push({ t: byCard[k].t, c: byCard[k].nums.join('-'), n: 1 }));
+  } else {
+    const axis = marks[0][0], partners = marks[1];
+    rows.push({ t: type + '流し', c: axis + '→' + partners.join('.'), n: partners.length });
+  }
+  window.log = []; marks = [];
+  draw(); document.getElementById('cards').style.display = 'none'; document.getElementById('amount').style.display = '';
+};
+function draw() {
+  const tb = document.getElementById('rows'); tb.innerHTML = '';
+  rows.forEach((r) => { const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${r.t}</td><td>${r.c}</td><td><input type="text"></td>`;
+    const inp = tr.querySelector('input'); inp.value = r.v || ''; inp.oninput = () => r.v = inp.value; tb.appendChild(tr); });
+}
+document.getElementById('addmore').onclick = () => {
+  document.getElementById('amount').style.display = 'none'; document.getElementById('cards').style.display = ''; tab('c');
+};
+document.getElementById('toconfirm').onclick = () => {
+  const total = rows.reduce((a, r) => a + (+r.v || 0) * 100 * r.n, 0);
+  window.rows = rows;
+  document.getElementById('amount').style.display = 'none'; document.getElementById('confirm').style.display = '';
+  document.getElementById('sum').textContent = '合計金額 ' + total.toLocaleString() + '円';
+};
+</script>"""
+
+
+@pytest.fixture
+def spat4(tmp_path, monkeypatch):
+    if not os.path.exists(chromium):
+        pytest.skip("Chromiumがありません")
+    monkeypatch.setattr(config, "data_dir", tmp_path)
+    monkeypatch.setattr(config, "chromium_path", chromium)
+    (tmp_path / "shots").mkdir()
+    (tmp_path / "selectors").mkdir()
+    page = tmp_path / "mock.html"
+    page.write_text(MOCK, encoding="utf-8")
+    flow = json.loads((Path(__file__).parent.parent / "app" / "selectors" / "spat4.json").read_text(encoding="utf-8"))
+    # ログインとレースを開くところは模擬サイトに置きかえ、入力から先は本物の手順を使う
+    flow["login"] = [{"do": "goto", "url": page.as_uri()}]
+    flow["open_race"] = [{"do": "wait_for", "sel": "#cards"}]
+    (tmp_path / "selectors" / "spat4.json").write_text(json.dumps(flow, ensure_ascii=False), encoding="utf-8")
+    return SiteBot("spat4", {"subscriber": "x", "user_id": "x", "pin": "1234"})
+
+
+def test_wide_nagashi_grouping():
+    order = sample_order("大井", 11, 1)
+    nag, rest = wide_nagashi(order["tickets"])
+    assert nag == {"axis": 1, "partners": [2, 3], "amount": 100}
+    assert [t["bet_type"] for t in rest] == ["単勝"] + ["複勝"] * 6
+    # 金額が違うワイドはまとめない
+    t = [{"bet_type": "ワイド", "combo": [1, 2], "amount": 100}, {"bet_type": "ワイド", "combo": [1, 3], "amount": 200}]
+    assert wide_nagashi(t)[0] is None
+
+
+def test_holiday_order_on_mark_cards(spat4):
+    order = sample_order("大井", 11, 1)  # 単勝1、ワイド1-2,1-3、複勝2〜7 = 900円
+
+    async def go():
+        async with spat4 as bot:
+            await bot.login()
+            res = await bot.vote(order, "rehearsal")
+            rows = await bot.page.evaluate("window.rows")
+            return res, rows
+    res, rows = asyncio.run(go())
+    assert res.status == "rehearsed", res.message
+    # 流し1行、カード1回目（単勝＋複勝5点）、買い目を追加して2回目（複勝1点）
+    assert [(r["t"], r["c"], r["v"]) for r in rows] == [
+        ("ワイド流し", "1→2.3", "1"),
+        ("単勝", "1", "1"),
+        ("複勝", "2", "1"), ("複勝", "3", "1"), ("複勝", "4", "1"), ("複勝", "5", "1"),
+        ("複勝", "6", "1"),
+        ("複勝", "7", "1"),
+    ]
+
+
+def test_amounts_go_to_the_right_rows(spat4):
+    tickets = [{"bet_type": "単勝", "combo": [3], "amount": 700},
+               {"bet_type": "複勝", "combo": [5], "amount": 100}]
+    order = {"id": 1, "venue": "大井", "race_no": 11, "bet_type": "x", "tickets": tickets,
+             "points": 2, "total": 800, "unit_amount": 700}
+
+    async def go():
+        async with spat4 as bot:
+            await bot.login()
+            return await bot.vote(order, "rehearsal"), await bot.page.evaluate("window.rows")
+    res, rows = asyncio.run(go())
+    assert res.status == "rehearsed", res.message
+    assert [(r["c"], r["v"]) for r in rows] == [("3", "7"), ("5", "1")]

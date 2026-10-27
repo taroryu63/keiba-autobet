@@ -74,6 +74,23 @@ class StepError(RuntimeError):
     pass
 
 
+def wide_nagashi(tickets: list[dict]) -> tuple[dict | None, list[dict]]:
+    """同じ金額のワイドが2点以上あり、全部に共通の馬（◎）がいれば、流し1つにまとめる。
+    戻り値: (流し {"axis", "partners", "amount"（1組あたり）} または None, 残りの馬券)"""
+    wides = [t for t in tickets if t["bet_type"] == "ワイド"]
+    if len(wides) < 2 or len({t["amount"] for t in wides}) != 1:
+        return None, tickets
+    common = set(wides[0]["combo"])
+    for t in wides[1:]:
+        common &= set(t["combo"])
+    if len(common) != 1:
+        return None, tickets
+    axis = common.pop()
+    partners = [n for t in wides for n in t["combo"] if n != axis]
+    rest = [t for t in tickets if t["bet_type"] != "ワイド"]
+    return {"axis": axis, "partners": partners, "amount": wides[0]["amount"]}, rest
+
+
 def load_flow(site: str) -> dict:
     override = config.data_dir / "selectors" / f"{site}.json"
     path = override if override.exists() else ROOT / "app" / "selectors" / f"{site}.json"
@@ -188,6 +205,13 @@ class SiteBot:
         t = step.get("timeout")
         do = step["do"]
         sel = render(step["sel"], vars) if "sel" in step else None
+        if do == "main_window":
+            # 別ウィンドウ（投票画面など）を閉じて、最初のウィンドウに戻る
+            pages = p.context.pages
+            for extra in pages[1:]:
+                await extra.close()
+            self.page = pages[0]
+            return
         if do == "goto":
             await p.goto(render(step["url"], vars), wait_until="domcontentloaded")
         elif do == "fill":
@@ -277,6 +301,9 @@ class SiteBot:
         """馬券を入力する（購入はしない）。base の total などはこの分の金額に書き換える。"""
         total = sum(t["amount"] for t in tickets)
         base.update(total=total, total_comma=f"{total:,}", points=len(tickets))
+        if self.flow.get("entry_mode") == "groups":
+            await self._enter_groups(tickets, base)
+            return
         # マークカード式のサイトは、1画面にcards_per_page枚のカードがあり、1点ごとに次のカードを使う
         per_page = self.flow.get("cards_per_page", 0)
         for i, t in enumerate(tickets):
@@ -289,6 +316,44 @@ class SiteBot:
                                       "card": i % per_page + 1 if per_page else 1,
                                       "units": t["amount"] // 100,
                                       "amount": t["amount"], "combo": "-".join(map(str, combo))}, targets)
+
+    async def _enter_groups(self, tickets: list[dict], base: dict) -> None:
+        """マークカード式のサイト（SPAT4）。
+        カードに印をつける → 「投票金額入力へ」→ 1行ずつ金額 →（続きがあれば「買い目を追加する」）を繰り返す。
+        ワイドは◎からの流しにまとめて、カード1枚で入れる。"""
+        per_page = self.flow.get("cards_per_page", 6)
+        groups = []
+        nagashi, rest = wide_nagashi(tickets) if self.flow.get("nagashi") else (None, tickets)
+        if nagashi:
+            groups.append(("nagashi", nagashi))
+        for i in range(0, len(rest), per_page):
+            groups.append(("cards", rest[i:i + per_page]))
+        labels = self.flow.get("bet_labels", {})
+        row = 0
+        for gi, (kind, g) in enumerate(groups):
+            if gi:
+                await self.run("add_more", base)
+            if kind == "nagashi":
+                v = {**base, "bet_label": labels.get("ワイド", "ワイド")}
+                await self.run("nagashi", v)
+                await self.run("pick", {**v, "num": g["axis"], "card": 1, "card0": 0})
+                for n in g["partners"]:
+                    await self.run("pick", {**v, "num": n, "card": 2, "card0": 1})
+                amounts = [g["amount"] // 100]
+            else:
+                await self.run("cards_tab", base)
+                for i, t in enumerate(g):
+                    combo = t["combo"]
+                    await self.run("ticket", {**base, "bet_type": t["bet_type"],
+                                              "bet_label": labels.get(t["bet_type"], t["bet_type"]),
+                                              "card": i + 1, "card0": i},
+                                   [(j + 1, n) for j, n in enumerate(combo)])
+                amounts = [t["amount"] // 100 for t in g]
+            await self.run("to_amount", base)
+            off = self.flow.get("amount_row_offset", 0)
+            for u in amounts:
+                await self.run("amount", {**base, "units": u, "row": row, "row_input": off + row})
+                row += 1
 
     async def vote(self, order: dict, mode: str, odds_rule: dict | None = None) -> VoteResult:
         """1件の買い目を入力し、mode=live のときだけ購入ボタンを押す。
