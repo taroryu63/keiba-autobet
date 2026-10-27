@@ -74,6 +74,35 @@ class StepError(RuntimeError):
     pass
 
 
+ONSCREEN_DEFAULT = "a, button, input[type=button], input[type=submit], span, div, li, td, p, img"
+ONSCREEN_JS = r"""([sel, text, index]) => {
+  document.querySelectorAll('[data-kb-target]').forEach((x) => x.removeAttribute('data-kb-target'));
+  const label = (e) => ((e.tagName === 'INPUT' ? e.value : e.textContent) || '').replace(/\s+/g, '').trim();
+  const want = text.replace(/\s+/g, '');
+  const hits = [];
+  for (const e of document.querySelectorAll(sel)) {
+    if (want && label(e) !== want) continue;
+    const r = e.getBoundingClientRect();
+    if (!r.width || !r.height) continue;
+    const st = getComputedStyle(e);
+    if (st.visibility === 'hidden' || st.opacity === '0') continue;
+    e.scrollIntoView({ block: 'center', inline: 'center' });
+    const q = e.getBoundingClientRect();
+    const x = q.left + q.width / 2, y = q.top + q.height / 2;
+    if (x < 0 || y < 0 || x > innerWidth || y > innerHeight) continue;
+    const top = document.elementFromPoint(x, y);
+    if (!top || !(top === e || e.contains(top))) continue;
+    // 同じ文字の入れ子（div > span など）は外側だけ数える
+    if (want && hits.some((h) => h.contains(e))) continue;
+    hits.push(e);
+  }
+  const e = hits[index];
+  if (!e) return false;
+  e.setAttribute('data-kb-target', '1');
+  return true;
+}"""
+
+
 def wide_nagashi(tickets: list[dict]) -> tuple[dict | None, list[dict]]:
     """同じ金額のワイドが2点以上あり、全部に共通の馬（◎）がいれば、流し1つにまとめる。
     戻り値: (流し {"axis", "partners", "amount"（1組あたり）} または None, 残りの馬券)"""
@@ -196,6 +225,19 @@ class SiteBot:
                     continue
                 raise StepError(f"{label} で失敗: {e}") from e
 
+    async def _mark_onscreen(self, sel: str, text: str, index: int, timeout: int) -> str:
+        """sel（CSS）に合う部品のうち、画面の表に出ているもの（他の画面に隠れていない）の index 番目に
+        目印を付け、その目印のセレクタを返す。text を渡すと、文字がちょうど一致するものだけにする。
+        画面が切り替わる途中のこともあるので、timeout まで待ちながら探す。"""
+        deadline = asyncio.get_running_loop().time() + timeout / 1000
+        while True:
+            found = await self.page.evaluate(ONSCREEN_JS, [sel, text, index])
+            if found:
+                return "[data-kb-target='1']"
+            if asyncio.get_running_loop().time() > deadline:
+                raise StepError(f"画面に出ている「{text or sel}」の{index + 1}番目が見つかりません")
+            await asyncio.sleep(0.3)
+
     def _visible(self, sel: str):
         """画面に見えている要素のうち最初のもの。サイトによっては同じボタンが隠れて複数あるため。"""
         return self.page.locator(sel).filter(visible=True).first
@@ -205,6 +247,10 @@ class SiteBot:
         t = step.get("timeout")
         do = step["do"]
         sel = render(step["sel"], vars) if "sel" in step else None
+        if step.get("onscreen"):
+            # 画面の表に実際に出ている部品だけから選ぶ（同じ部品が裏に重なっているサイト用）
+            sel = await self._mark_onscreen(sel or ONSCREEN_DEFAULT, render(step.get("text", ""), vars),
+                                            int(render(str(step.get("index", 0)), vars)), t or 8000)
         if do == "main_window":
             # 別ウィンドウ（投票画面など）を閉じて、最初のウィンドウに戻る
             pages = p.context.pages

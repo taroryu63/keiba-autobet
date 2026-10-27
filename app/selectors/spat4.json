@@ -106,7 +106,8 @@
   "ticket": [
     {
       "do": "click",
-      "sel": ":text-is('{bet_label}')"
+      "text": "{bet_label}",
+      "onscreen": true
     },
     {
       "do": "pick"
@@ -115,13 +116,16 @@
   "pick": [
     {
       "do": "click",
-      "sel": "button.num.no-{num} >> visible=true >> nth={card0}"
+      "sel": "button.num.no-{num}",
+      "onscreen": true,
+      "index": "{card0}"
     }
   ],
   "confirm": [
     {
       "do": "click",
-      "sel": ":text-is('投票内容確認へ')"
+      "text": "投票内容確認へ",
+      "onscreen": true
     },
     {
       "do": "wait",
@@ -129,7 +133,8 @@
     },
     {
       "do": "click",
-      "sel": ":text-is('OK')",
+      "text": "OK",
+      "onscreen": true,
       "optional": true,
       "timeout": 1000
     },
@@ -201,9 +206,8 @@
   "cards_tab": [
     {
       "do": "click",
-      "sel": ":text-is('単･複･連勝複式'), :text-is('単・複・連勝複式')",
-      "optional": true,
-      "timeout": 3000
+      "text": "単･複･連勝複式",
+      "onscreen": true
     },
     {
       "do": "wait",
@@ -213,7 +217,8 @@
   "nagashi": [
     {
       "do": "click",
-      "sel": ":text-is('連複流し')"
+      "text": "連複流し",
+      "onscreen": true
     },
     {
       "do": "wait",
@@ -221,7 +226,8 @@
     },
     {
       "do": "click",
-      "sel": ":text-is('{bet_label}')"
+      "text": "{bet_label}",
+      "onscreen": true
     },
     {
       "do": "wait",
@@ -231,25 +237,28 @@
   "to_amount": [
     {
       "do": "click",
-      "sel": ":text-is('投票金額入力へ')"
+      "text": "投票金額入力へ",
+      "onscreen": true
     },
     {
-      "do": "wait_for",
-      "sel": "text=投票金額を入力してください"
+      "do": "wait",
+      "ms": 800
     }
   ],
-  "amount_row_offset": 2,
   "amount": [
     {
       "do": "fill",
-      "sel": "input[type='text'], input[type='tel'], input[type='number'], input:not([type]) >> visible=true >> nth={row_input}",
+      "sel": "input.input.number:not([name])",
+      "onscreen": true,
+      "index": "{row}",
       "value": "{units}"
     }
   ],
   "add_more": [
     {
       "do": "click",
-      "sel": ":text-is('買い目を追加する')"
+      "text": "買い目を追加する",
+      "onscreen": true
     },
     {
       "do": "wait",

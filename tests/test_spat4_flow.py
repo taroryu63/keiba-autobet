@@ -24,12 +24,13 @@ MOCK = """<!doctype html><meta charset="utf-8"><body>
 <div id="cards">
   <div class="tabs"><a onclick="tab('c')">単･複･連勝複式</a><a onclick="tab('n')">連複流し</a></div>
   <div class="types"><span class="t">単勝</span><span class="t">複勝</span><span class="t">ワイド</span></div>
-  <div id="tab-c"></div><div id="tab-n" style="display:none"></div>
+  <div id="tab-c"></div><div id="tab-n" style="position:absolute;left:-5000px"></div>
   <span id="goamount">投票金額入力へ</span>
 </div>
 <div id="amount" style="display:none">
   <p>投票金額を入力してください</p>
-  <div class="left"><input type="text" value="1"><span>セット</span><input type="text"><span>セット</span></div>
+  <div class="left"><input class="input number with-calc" name="buy_one" type="text" value="1"><span>セット</span>
+    <input class="input number with-calc" name="buy_all" type="text"><span>セット</span></div>
   <table id="rows"></table>
   <span id="addmore">買い目を追加する</span><span id="toconfirm">投票内容確認へ</span>
 </div>
@@ -37,8 +38,9 @@ MOCK = """<!doctype html><meta charset="utf-8"><body>
 <script>
 let mode = 'c', type = null, marks = [], rows = [];
 window.log = [];
-function tab(m) { mode = m; document.getElementById('tab-c').style.display = m === 'c' ? '' : 'none';
-  document.getElementById('tab-n').style.display = m === 'n' ? '' : 'none'; marks = []; }
+function show(id, on) { const e = document.getElementById(id); e.style.position = on ? '' : 'absolute';
+  e.style.left = on ? '' : '-5000px'; }
+function tab(m) { mode = m; show('tab-c', m === 'c'); show('tab-n', m === 'n'); marks = []; }
 function card(box, k) {
   const d = document.createElement('div');
   for (let n = 1; n <= 16; n++) {
@@ -72,7 +74,7 @@ document.getElementById('goamount').onclick = () => {
 function draw() {
   const tb = document.getElementById('rows'); tb.innerHTML = '';
   rows.forEach((r) => { const tr = document.createElement('tr');
-    tr.innerHTML = `<td>${r.t}</td><td>${r.c}</td><td><input type="text"></td>`;
+    tr.innerHTML = `<td>${r.t}</td><td>${r.c}</td><td><input class="input number" type="text"></td>`;
     const inp = tr.querySelector('input'); inp.value = r.v || ''; inp.oninput = () => r.v = inp.value; tb.appendChild(tr); });
 }
 document.getElementById('addmore').onclick = () => {
