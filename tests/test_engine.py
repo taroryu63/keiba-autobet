@@ -210,4 +210,5 @@ def test_connection_check_lists_parts_on_failure(site):
     steps = asyncio.run(run_check(bot, "東京", 11, 5))
     parts = steps[-1]["parts"]
     assert 'button#m1-5 onclick=pick(1,5) "1-5"' in parts
-    assert "me" not in parts.split("input[name=id]")[1].split("\n")[0]  # 入力した値は出さない
+    units = next(line for line in parts.splitlines() if "input#units" in line)
+    assert "value" not in units  # 入力欄の値は出さない
