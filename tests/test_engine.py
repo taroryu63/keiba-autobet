@@ -136,3 +136,11 @@ def test_connection_check_stops_at_failure(site):
     bot.flow["ticket"][0]["sel"] = "#nothing"
     steps = asyncio.run(run_check(bot, "東京", 11, 5))
     assert [s["stage"] for s in steps][-1] == "ticket" and not steps[-1]["ok"]
+
+
+def test_connection_check_continues_past_time(site):
+    from app.calibration import run_check
+    bot = site()
+    bot.flow["post_time"] = [{"do": "click", "sel": "#nothing", "timeout": 500}]
+    steps = asyncio.run(run_check(bot, "東京", 11, 5))
+    assert [s["ok"] for s in steps] == [True, False, True, True, True, True]

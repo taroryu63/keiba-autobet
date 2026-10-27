@@ -1,5 +1,5 @@
 {
-  "_note": "SPAT4（PC版）の操作手順。実際の画面では未検証のため、rehearsalモードとtools/calibrate.pyで画面に合わせて調整してください。",
+  "_note": "SPAT4（PC版）の操作手順。ログインと開催場・レース一覧（2026/10の画面）は確認済み。",
   "required": [
     "subscriber",
     "user_id",
@@ -48,34 +48,36 @@
   "post_time": [
     {
       "do": "click",
-      "sel": "a:has-text('投票メニュー'), a:has-text('通常投票')",
+      "sel": "text=\"{venue}\"",
       "optional": true,
-      "timeout": 3000
+      "timeout": 5000
     },
     {
-      "do": "click",
-      "sel": "a:has-text('{venue}')"
+      "do": "wait_for",
+      "sel": "text=/{venue}競馬/",
+      "timeout": 10000
     },
     {
       "do": "read_time",
-      "sel": "a:has-text('{race_no}R'), tr:has-text('{race_no}R')",
+      "sel": "tr:has(td :text-is('{race_no}R')), tr:has(td:text-is('{race_no}R'))",
       "var": "post_time"
     }
   ],
   "open_race": [
     {
       "do": "click",
-      "sel": "a:has-text('投票メニュー'), a:has-text('通常投票')",
+      "sel": "text=\"{venue}\"",
       "optional": true,
-      "timeout": 3000
+      "timeout": 5000
+    },
+    {
+      "do": "wait_for",
+      "sel": "text=/{venue}競馬/",
+      "timeout": 10000
     },
     {
       "do": "click",
-      "sel": "a:has-text('{venue}')"
-    },
-    {
-      "do": "click",
-      "sel": "a:has-text('{race_no}R'), a:has-text('{race_no}レース')"
+      "sel": "tr:has(td :text-is('{race_no}R')) :text-is('{race_no}R'), tr td:text-is('{race_no}R')"
     }
   ],
   "read_odds": [
@@ -176,5 +178,6 @@
       "sel": "tr:has-text('{venue}'):has-text('{race_no}R'):has-text('単勝'):has-text('的中')",
       "var": "tansho_hit"
     }
-  ]
+  ],
+  "post_time_add_min": 2
 }

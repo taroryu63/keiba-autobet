@@ -198,7 +198,13 @@ class SiteBot:
     async def read_post_time(self, venue: str, race_no: int) -> str | None:
         vars = {**self.credentials, "venue": venue, "race_no": race_no}
         await self.run("post_time", vars)
-        return vars.get("post_time")
+        t = vars.get("post_time")
+        add = self.flow.get("post_time_add_min", 0)  # 画面の時刻が締切時刻のサイト用
+        if t and add:
+            h, m = map(int, t.split(":"))
+            total = h * 60 + m + add
+            t = f"{total // 60 % 24:02d}:{total % 60:02d}"
+        return t
 
     async def check_result(self, order: dict) -> dict:
         """払戻を確認する。{"settled": 確定なら1, "payout": この買い目の払戻合計,
