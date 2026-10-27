@@ -8,11 +8,12 @@ STAGES = [
     ("time", "発走時刻の読み取り"),
     ("race", "レースを開く"),
     ("odds", "単勝オッズの読み取り"),
+    ("probe", "流しの画面を見る（マークはしません）"),
     ("ticket", "馬券の入力（複勝100円）"),
     ("confirm", "確認画面（合計金額）"),
 ]
 
-OPTIONAL = {"time", "odds"}
+OPTIONAL = {"time", "odds", "probe"}
 
 
 async def run_check(bot: SiteBot, venue: str, race_no: int, horse: int) -> list[dict]:
@@ -26,6 +27,7 @@ async def run_check(bot: SiteBot, venue: str, race_no: int, horse: int) -> list[
         "time": lambda: bot.read_post_time(venue, race_no),
         "race": lambda: bot.run("open_race", vars),
         "odds": lambda: bot.read_numbers("read_odds", vars, ("odds",)),
+        "probe": lambda: bot.run("probe", vars),
         "ticket": lambda: bot.run("ticket", vars, [(1, horse)]),
         "confirm": lambda: bot.run("confirm", vars),
     }
@@ -38,15 +40,22 @@ async def run_check(bot: SiteBot, venue: str, race_no: int, horse: int) -> list[
                 ok = True
             except Exception as e:
                 info, ok = str(e)[:500], False
+            if stage == "probe" and not bot.flow.get("probe"):
+                continue  # 見るものがないサイトは飛ばす
             shot = await bot.screenshot(f"check-{stage}")
             parts = ""
-            if not ok:
+            if not ok or stage == "probe":
                 await bot.dump(f"check-{stage}")
                 try:
                     parts = await bot.elements()
                 except Exception as e:
                     parts = f"部品の一覧を取れませんでした: {e}"
             out.append({"stage": stage, "label": label, "ok": ok, "info": info, "shot": shot, "parts": parts})
+            if stage == "probe":
+                try:
+                    await bot.run("probe_back", vars)  # 元の入力画面に戻る
+                except Exception:
+                    pass
             # 発走時刻とオッズは読めなくても投票は進められるので、次の段階も試す
             if not ok and stage not in OPTIONAL:
                 break

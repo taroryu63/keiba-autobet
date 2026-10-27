@@ -187,5 +187,35 @@
     "3連単": "三連単"
   },
   "cards_per_page": 6,
-  "next_cards": []
+  "next_cards": [],
+  "probe": [
+    {
+      "do": "click",
+      "sel": ":text-is('連複流し')"
+    },
+    {
+      "do": "wait",
+      "ms": 800
+    },
+    {
+      "do": "click",
+      "sel": ":text-is('ワイド')",
+      "optional": true,
+      "timeout": 3000
+    },
+    {
+      "do": "wait",
+      "ms": 800
+    }
+  ],
+  "probe_back": [
+    {
+      "do": "click",
+      "sel": ":text-is('単･複･連勝複式'), :text-is('単・複・連勝複式')"
+    },
+    {
+      "do": "wait",
+      "ms": 800
+    }
+  ]
 }

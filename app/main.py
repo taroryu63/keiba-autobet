@@ -478,7 +478,7 @@ async def check_site(body: CheckIn):
     async with runner._lock:  # 投票と同時に動かない
         steps = await run_check(runner.bot_factory(body.site), body.venue, body.race_no, body.horse)
     db().log(f"接続テスト {body.site}: " + " / ".join(f"{x['label']}{'○' if x['ok'] else '×'}" for x in steps))
-    return {"steps": steps, "ok": all(x["ok"] for x in steps) and len(steps) == 6}
+    return {"steps": steps, "ok": all(x["ok"] for x in steps) and steps[-1]["stage"] == "confirm"}
 
 
 @app.get("/api/logs", dependencies=[Depends(auth)])
