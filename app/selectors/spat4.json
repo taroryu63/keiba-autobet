@@ -81,7 +81,7 @@
     },
     {
       "do": "click",
-      "sel": "input[value*='マークカード'], a:has-text('マークカード投票'), button:has-text('マークカード投票'), img[alt*='マークカード'], text=マークカード投票",
+      "sel": "input[value*='マークカード'], img[alt*='マークカード'], :text('マークカード投票')",
       "new_window": true
     },
     {

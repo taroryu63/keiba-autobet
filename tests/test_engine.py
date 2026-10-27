@@ -172,3 +172,31 @@ def test_new_window_click_still_fails_when_button_missing(site):
             await bot._step({"do": "click", "sel": "#none", "new_window": True, "timeout": 500}, {})
     with pytest.raises(Exception):
         asyncio.run(go())
+
+
+def test_all_selectors_are_valid():
+    """手順ファイルのセレクタが、すべてブラウザで解釈できる書き方になっていること。"""
+    import re
+    from pathlib import Path
+    from playwright.async_api import async_playwright
+
+    if not os.path.exists(chromium):
+        pytest.skip("Chromiumがありません")
+
+    async def go():
+        bad = []
+        async with async_playwright() as p:
+            b = await p.chromium.launch(executable_path=chromium)
+            pg = await b.new_page()
+            await pg.set_content("<p>x</p>")
+            for f in (Path(__file__).parent.parent / "app" / "selectors").glob("*.json"):
+                for sec, steps in json.loads(f.read_text(encoding="utf-8")).items():
+                    for st in steps if isinstance(steps, list) else []:
+                        if isinstance(st, dict) and "sel" in st:
+                            try:
+                                await pg.locator(re.sub(r"\{\w+\}", "1", st["sel"])).count()
+                            except Exception:
+                                bad.append(f"{f.name} {sec}: {st['sel']}")
+            await b.close()
+        return bad
+    assert asyncio.run(go()) == []
