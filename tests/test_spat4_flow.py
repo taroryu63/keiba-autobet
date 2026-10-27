@@ -34,7 +34,11 @@ MOCK = """<!doctype html><meta charset="utf-8"><body>
   <table id="rows"></table>
   <span id="addmore">買い目を追加する</span><span id="toconfirm">投票内容確認へ</span>
 </div>
-<div id="confirm" style="display:none"><p id="sum"></p><input type="password" id="pin"></div>
+<div id="confirm" style="display:none"><p>投票内容を確認の上、暗証番号、投票金額を入力してください</p>
+  <span class="money" style="position:absolute;left:-5000px">999円</span>
+  <div id="sum"></div>
+  <input class="input with-calc" name="cfm_ansho" type="password"><input class="input number with-calc" name="cfm_amount" type="text">
+  <span id="buy">投票する</span></div>
 <script>
 let mode = 'c', type = null, marks = [], rows = [];
 window.log = [];
@@ -84,7 +88,7 @@ document.getElementById('toconfirm').onclick = () => {
   const total = rows.reduce((a, r) => a + (+r.v || 0) * 100 * r.n, 0);
   window.rows = rows;
   document.getElementById('amount').style.display = 'none'; document.getElementById('confirm').style.display = '';
-  document.getElementById('sum').textContent = '合計金額 ' + total.toLocaleString() + '円';
+  document.getElementById('sum').innerHTML = `合計 <b>${rows.length}</b> 件 合計金額 <span class="money">${total.toLocaleString()}</span> 円`;
 };
 </script>"""
 
@@ -125,9 +129,12 @@ def test_holiday_order_on_mark_cards(spat4):
             await bot.login()
             res = await bot.vote(order, "rehearsal")
             rows = await bot.page.evaluate("window.rows")
-            return res, rows
-    res, rows = asyncio.run(go())
+            filled = await bot.page.evaluate(
+                "[document.querySelector('[name=cfm_ansho]').value, document.querySelector('[name=cfm_amount]').value]")
+            return res, rows, filled
+    res, rows, filled = asyncio.run(go())
     assert res.status == "rehearsed", res.message
+    assert filled == ["1234", "900"]  # 暗証番号と、確認のための合計金額
     # 流し1行、カード1回目（単勝＋複勝5点）、買い目を追加して2回目（複勝1点）
     assert [(r["t"], r["c"], r["v"]) for r in rows] == [
         ("ワイド流し", "1→2.3", "1"),

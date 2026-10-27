@@ -75,13 +75,14 @@ class StepError(RuntimeError):
 
 
 ONSCREEN_DEFAULT = "a, button, input[type=button], input[type=submit], span, div, li, td, p, img"
-ONSCREEN_JS = r"""([sel, text, index]) => {
+ONSCREEN_TEXT = "div, p, span, td, th, li, b, strong, dd, dt"
+ONSCREEN_JS = r"""([sel, text, index, contains]) => {
   document.querySelectorAll('[data-kb-target]').forEach((x) => x.removeAttribute('data-kb-target'));
   const label = (e) => ((e.tagName === 'INPUT' ? e.value : e.textContent) || '').replace(/\s+/g, '').trim();
   const want = text.replace(/\s+/g, '');
   const hits = [];
   for (const e of document.querySelectorAll(sel)) {
-    if (want && label(e) !== want) continue;
+    if (want && (contains ? !label(e).includes(want) : label(e) !== want)) continue;
     const r = e.getBoundingClientRect();
     if (!r.width || !r.height) continue;
     const st = getComputedStyle(e);
@@ -225,13 +226,13 @@ class SiteBot:
                     continue
                 raise StepError(f"{label} で失敗: {e}") from e
 
-    async def _mark_onscreen(self, sel: str, text: str, index: int, timeout: int) -> str:
+    async def _mark_onscreen(self, sel: str, text: str, index: int, timeout: int, contains: bool = False) -> str:
         """sel（CSS）に合う部品のうち、画面の表に出ているもの（他の画面に隠れていない）の index 番目に
         目印を付け、その目印のセレクタを返す。text を渡すと、文字がちょうど一致するものだけにする。
         画面が切り替わる途中のこともあるので、timeout まで待ちながら探す。"""
         deadline = asyncio.get_running_loop().time() + timeout / 1000
         while True:
-            found = await self.page.evaluate(ONSCREEN_JS, [sel, text, index])
+            found = await self.page.evaluate(ONSCREEN_JS, [sel, text, index, contains])
             if found:
                 return "[data-kb-target='1']"
             if asyncio.get_running_loop().time() > deadline:
@@ -249,6 +250,11 @@ class SiteBot:
         sel = render(step["sel"], vars) if "sel" in step else None
         if step.get("onscreen"):
             # 画面の表に実際に出ている部品だけから選ぶ（同じ部品が裏に重なっているサイト用）
+            if do == "expect_text":
+                # 画面の表に出ている部品に、この文字が含まれていること
+                await self._mark_onscreen(sel or ONSCREEN_TEXT, render(step["text"], vars), 0, t or 8000,
+                                          contains=True)
+                return
             sel = await self._mark_onscreen(sel or ONSCREEN_DEFAULT, render(step.get("text", ""), vars),
                                             int(render(str(step.get("index", 0)), vars)), t or 8000)
         if do == "main_window":
@@ -294,7 +300,9 @@ class SiteBot:
             await self._visible(sel).wait_for(state="visible", timeout=t)
         elif do == "read":
             text = await self._visible(sel).inner_text(timeout=t or 5000)
-            m = re.search(r"\d[\d,]*(?:\.\d+)?", text)
+            # "decimal": 小数点のある数字だけを読む（オッズの行に馬番・枠番などの整数も並んでいるため）
+            pat = r"\d+\.\d+" if step.get("pattern") == "decimal" else r"\d[\d,]*(?:\.\d+)?"
+            m = re.search(pat, text)
             if not m:
                 raise StepError(f"数字を読み取れません: {text!r}")
             vars[step["var"]] = float(m.group(0).replace(",", ""))
@@ -419,7 +427,10 @@ class SiteBot:
         bought = 0
         odds = None
         try:
-            await self.run("open_race", base)
+            # オッズが投票画面とは別の画面にあるサイトは、先にオッズを読んでから投票画面を開く
+            early = self.flow.get("odds_before_open")
+            if not early:
+                await self.run("open_race", base)
             if odds_rule:
                 try:
                     got = await self.read_numbers("read_odds", {**base, "num": odds_rule["horse"]}, ("odds",))
@@ -432,6 +443,8 @@ class SiteBot:
                 if not tickets:
                     why = "オッズを読めない" if odds is None else f"単勝{odds}倍"
                     return VoteResult("skipped", f"{why}のため見送りました", odds=odds, tickets=[])
+            if early:
+                await self.run("open_race", base)
             total = sum(t["amount"] for t in tickets)
             # 1回の投票で入れられる点数に上限があるサイトは、分けて投票する
             limit = self.flow.get("max_tickets_per_vote") or len(tickets)

@@ -55,10 +55,14 @@ async def run_check(bot: SiteBot, venue: str, race_no: int, horse: int) -> list[
         "confirm": lambda: bot.run("confirm", vars),
         "many": many,
     }
+    stages = list(STAGES)
+    if bot.flow.get("odds_before_open"):
+        i, j = [k for k, (st, _) in enumerate(stages) if st in ("race", "odds")]
+        stages[i], stages[j] = stages[j], stages[i]
     out: list[dict] = []
     async with bot:
         stopped = False
-        for stage, label in STAGES:
+        for stage, label in stages:
             if stopped and stage not in ALWAYS:
                 continue
             try:
@@ -69,7 +73,7 @@ async def run_check(bot: SiteBot, venue: str, race_no: int, horse: int) -> list[
                 info, ok = str(e)[:500], False
             shot = await bot.screenshot(f"check-{stage}")
             parts = ""
-            if not ok:
+            if not ok or stage == "odds":
                 await bot.dump(f"check-{stage}")
                 try:
                     parts = await bot.elements()

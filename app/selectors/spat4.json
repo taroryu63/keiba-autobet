@@ -1,5 +1,5 @@
 {
-  "_note": "SPAT4（PC版）の操作手順。ログイン〜マークカード・金額入力の画面（2026/10）は確認済み。確認画面から先は未確認。",
+  "_note": "SPAT4（PC版）の操作手順。ログイン〜マークカード・金額入力・確認画面（2026/10）は確認済み。投票した後の画面は未確認。",
   "required": [
     "subscriber",
     "user_id",
@@ -51,6 +51,12 @@
     },
     {
       "do": "click",
+      "sel": "input[value='開催要領']",
+      "optional": true,
+      "timeout": 5000
+    },
+    {
+      "do": "click",
       "sel": "text=\"{venue}\"",
       "optional": true,
       "timeout": 5000
@@ -69,6 +75,12 @@
   "open_race": [
     {
       "do": "main_window"
+    },
+    {
+      "do": "click",
+      "sel": "input[value='開催要領']",
+      "optional": true,
+      "timeout": 5000
     },
     {
       "do": "click",
@@ -97,10 +109,44 @@
   ],
   "read_odds": [
     {
+      "do": "main_window"
+    },
+    {
+      "do": "click",
+      "sel": "input[value='開催要領']",
+      "optional": true,
+      "timeout": 5000
+    },
+    {
+      "do": "click",
+      "sel": "text=\"{venue}\"",
+      "optional": true,
+      "timeout": 5000
+    },
+    {
+      "do": "wait_for",
+      "sel": "text=/{venue}競馬/",
+      "timeout": 10000
+    },
+    {
+      "do": "click",
+      "sel": "tr:has(td :text-is('{race_no}R')) :text-is('{race_no}R'), tr td:text-is('{race_no}R')"
+    },
+    {
+      "do": "click",
+      "sel": "input[value='オッズ投票'], input[value*='オッズ']",
+      "new_window": true
+    },
+    {
+      "do": "wait",
+      "ms": 1500
+    },
+    {
       "do": "read",
-      "sel": "tr:has(td:text-is('{num}')) td.tanOdds, tr:has(td:text-is('{num}')) .odds",
+      "sel": "tr:has(td:nth-child(2):text-is('{num}')), tr:has(td:nth-child(1):text-is('{num}'))",
+      "pattern": "decimal",
       "var": "odds",
-      "timeout": 4000
+      "timeout": 6000
     }
   ],
   "ticket": [
@@ -140,20 +186,25 @@
     },
     {
       "do": "expect_text",
-      "text": "{total_comma}円"
+      "text": "合計金額{total_comma}円",
+      "onscreen": true
     },
     {
       "do": "fill",
-      "sel": "input[type='password']",
-      "value": "{pin}",
-      "optional": true,
-      "timeout": 3000
+      "sel": "input[name='cfm_ansho']",
+      "value": "{pin}"
+    },
+    {
+      "do": "fill",
+      "sel": "input[name='cfm_amount']",
+      "value": "{total}"
     }
   ],
   "purchase": [
     {
       "do": "click",
-      "sel": "input[value*='投票する'], button:has-text('投票する'), a:has-text('投票する')"
+      "text": "投票する",
+      "onscreen": true
     }
   ],
   "done_check": [
@@ -264,5 +315,6 @@
       "do": "wait",
       "ms": 800
     }
-  ]
+  ],
+  "odds_before_open": true
 }
