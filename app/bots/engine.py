@@ -305,11 +305,17 @@ class SiteBot:
                     return VoteResult("skipped", f"{why}のため見送りました", odds=odds, tickets=[])
             total = sum(t["amount"] for t in tickets)
             base.update(total=total, total_comma=f"{total:,}", points=len(tickets))
-            for t in tickets:
+            # マークカード式のサイトは、1画面にcards_per_page枚のカードがあり、1点ごとに次のカードを使う
+            per_page = self.flow.get("cards_per_page", 0)
+            for i, t in enumerate(tickets):
+                if per_page and i and i % per_page == 0:
+                    await self.run("next_cards", base)
                 combo = t["combo"]
                 targets = [(1, combo[0])] if len(combo) == 1 else [(i + 1, n) for i, n in enumerate(combo)]
                 await self.run("ticket", {**base, "bet_type": t["bet_type"],
-                                          "bet_label": self.flow.get("bet_labels", {}).get(t["bet_type"], t["bet_type"]), "units": t["amount"] // 100,
+                                          "bet_label": self.flow.get("bet_labels", {}).get(t["bet_type"], t["bet_type"]),
+                                          "card": i % per_page + 1 if per_page else 1,
+                                          "units": t["amount"] // 100,
                                           "amount": t["amount"], "combo": "-".join(map(str, combo))}, targets)
             await self.run("confirm", base)  # ここで合計金額が一致するか確認する
             if mode != "live":

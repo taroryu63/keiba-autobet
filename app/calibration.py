@@ -19,7 +19,7 @@ async def run_check(bot: SiteBot, venue: str, race_no: int, horse: int) -> list[
     """各段階の結果 [{"stage", "label", "ok", "info", "shot"}] を返す。
     失敗した段階で止まる（発走時刻・オッズの読み取りは失敗しても続ける）。"""
     vars = {**bot.credentials, "venue": venue, "race_no": race_no, "num": horse, "bet_type": "複勝", "bet_label": bot.flow.get("bet_labels", {}).get("複勝", "複勝"),
-            "method_label": "通常", "units": 1, "amount": 100, "total": 100, "total_comma": "100",
+            "method_label": "通常", "card": 1, "units": 1, "amount": 100, "total": 100, "total_comma": "100",
             "points": 1, "combo": str(horse)}
     calls = {
         "login": lambda: bot.login(),

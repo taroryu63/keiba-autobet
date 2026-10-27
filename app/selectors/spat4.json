@@ -1,5 +1,5 @@
 {
-  "_note": "SPAT4（PC版）の操作手順。ログイン・開催場・レース一覧・出走表・マークカード投票の画面（2026/10）は確認済み。",
+  "_note": "SPAT4（PC版）の操作手順。ログイン〜マークカードの券種・馬番（2026/10の画面）は確認済み。金額入力から先は未確認。",
   "required": [
     "subscriber",
     "user_id",
@@ -103,45 +103,36 @@
       "sel": ":text-is('{bet_label}')"
     },
     {
-      "do": "click",
-      "sel": ":text-is('{method_label}')",
-      "optional": true,
-      "timeout": 2000
-    },
-    {
       "do": "pick"
-    },
-    {
-      "do": "fill",
-      "sel": "input[name*='KINGAKU'], input[name*='kingaku']",
-      "value": "{units}"
-    },
-    {
-      "do": "click",
-      "sel": "input[value='セット'], button:has-text('セット'), a:has-text('セット')"
     }
   ],
   "pick": [
     {
       "do": "click",
-      "sel": "input[name*='UMA{col}'][value='{num}'], tr:has(td:text-is('{num}')) input[type='checkbox'] >> nth={col}"
+      "sel": ":nth-match(button.num.no-{num}, {card})"
     }
   ],
   "confirm": [
     {
       "do": "click",
-      "sel": "input[value*='確認'], button:has-text('確認'), a:has-text('投票内容確認')"
+      "sel": ":text-is('投票金額入力へ')"
+    },
+    {
+      "do": "wait",
+      "ms": 1000
+    },
+    {
+      "do": "fill",
+      "sel": "input[type='text'], input[type='tel'], input[type='number']",
+      "value": "{units}"
+    },
+    {
+      "do": "click",
+      "sel": ":text-is('投票内容確認へ')"
     },
     {
       "do": "expect_text",
       "text": "{total_comma}円"
-    },
-    {
-      "do": "fill",
-      "sel": "input[name='MEMBERPASSR'], input[type='password']",
-      "value": "{pin}",
-      "optional": true,
-      "timeout": 3000
     }
   ],
   "purchase": [
@@ -194,5 +185,7 @@
     "馬連": "馬複",
     "3連複": "三連複",
     "3連単": "三連単"
-  }
+  },
+  "cards_per_page": 6,
+  "next_cards": []
 }
