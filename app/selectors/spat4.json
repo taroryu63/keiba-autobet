@@ -1,5 +1,5 @@
 {
-  "_note": "SPAT4（PC版）の操作手順。ログイン・開催場・レース一覧・出走表（2026/10の画面）は確認済み。",
+  "_note": "SPAT4（PC版）の操作手順。ログイン・開催場・レース一覧・出走表・マークカード投票の画面（2026/10）は確認済み。",
   "required": [
     "subscriber",
     "user_id",
@@ -100,11 +100,11 @@
   "ticket": [
     {
       "do": "click",
-      "sel": "a:has-text('{bet_type}'), label:has-text('{bet_type}')"
+      "sel": ":text-is('{bet_label}')"
     },
     {
       "do": "click",
-      "sel": "a:has-text('{method_label}'), label:has-text('{method_label}')",
+      "sel": ":text-is('{method_label}')",
       "optional": true,
       "timeout": 2000
     },
@@ -188,5 +188,11 @@
       "var": "tansho_hit"
     }
   ],
-  "post_time_add_min": 2
+  "post_time_add_min": 2,
+  "bet_labels": {
+    "枠連": "枠複",
+    "馬連": "馬複",
+    "3連複": "三連複",
+    "3連単": "三連単"
+  }
 }

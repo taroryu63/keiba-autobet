@@ -394,6 +394,9 @@ $("#btn-check").addEventListener("click", async () => {
       + r.steps.map((x) => `<div class="order"><div class="head"><span>${x.ok ? "○" : "×"} ${esc(x.label)}</span></div>`
         + (x.info ? `<div class="msg ${x.ok ? "" : "neg"}">${esc(x.info)}</div>` : "")
         + (x.shot ? `<img src="/api/shots/${encodeURIComponent(x.shot)}" alt="${esc(x.label)}の画面" style="width:100%;border:1px solid var(--line);border-radius:8px;margin-top:6px">` : "")
+        + (x.parts ? `<details style="margin-top:6px"><summary>画面の部品の一覧（Claudeに送る用）</summary>
+            <textarea readonly rows="8" class="parts">${esc(x.parts)}</textarea>
+            <button class="small primary" data-copy>コピーする</button></details>` : "")
         + `</div>`).join("");
   } catch (err) {
     $("#chk-out").innerHTML = `<p class="err">${esc(err.message)}</p>`;
@@ -401,6 +404,19 @@ $("#btn-check").addEventListener("click", async () => {
     btn.disabled = false;
     btn.textContent = "テストする";
   }
+});
+
+$("#chk-out").addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-copy]");
+  if (!b) return;
+  const ta = b.parentElement.querySelector("textarea");
+  try {
+    await navigator.clipboard.writeText(ta.value);
+  } catch {
+    ta.select();
+    document.execCommand("copy");
+  }
+  toast("コピーしました。Claudeのチャットに貼り付けてください");
 });
 
 // --- 起動 ---

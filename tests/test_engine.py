@@ -200,3 +200,14 @@ def test_all_selectors_are_valid():
             await b.close()
         return bad
     assert asyncio.run(go()) == []
+
+
+def test_connection_check_lists_parts_on_failure(site):
+    from app.calibration import run_check
+    bot = site()
+    bot.flow["ticket"][0]["sel"] = "#nothing"
+    bot.flow["ticket"][0]["timeout"] = 500
+    steps = asyncio.run(run_check(bot, "東京", 11, 5))
+    parts = steps[-1]["parts"]
+    assert 'button#m1-5 onclick=pick(1,5) "1-5"' in parts
+    assert "me" not in parts.split("input[name=id]")[1].split("\n")[0]  # 入力した値は出さない

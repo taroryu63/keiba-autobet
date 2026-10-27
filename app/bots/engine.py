@@ -45,6 +45,31 @@ class VoteResult:
     odds: float | None = None
 
 
+ELEMENTS_JS = r"""() => {
+  const out = [];
+  const q = 'a,button,input,select,textarea,label,img,area,[onclick],[role=button]';
+  for (const el of document.querySelectorAll(q)) {
+    const r = el.getBoundingClientRect();
+    if (r.width === 0 || r.height === 0) continue;
+    let d = el.tagName.toLowerCase();
+    if (el.id) d += '#' + el.id;
+    if (el.className && typeof el.className === 'string') d += '.' + el.className.trim().split(/\s+/).slice(0, 3).join('.');
+    for (const a of ['name', 'type', 'alt', 'href']) {
+      const v = el.getAttribute(a);
+      if (v) d += `[${a}=${v.slice(0, 40)}]`;
+    }
+    if (el.tagName === 'INPUT' && ['button', 'submit', 'radio', 'checkbox', 'image'].includes(el.type)) d += `[value=${(el.value || '').slice(0, 20)}]`;
+    if (el.disabled) d += '[disabled]';
+    const oc = el.getAttribute('onclick');
+    if (oc) d += ` onclick=${oc.slice(0, 50)}`;
+    const t = (el.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 25);
+    if (t) d += ` "${t}"`;
+    out.push(d);
+  }
+  return out;
+}"""
+
+
 class StepError(RuntimeError):
     pass
 
@@ -115,6 +140,19 @@ class SiteBot:
             return name
         except Exception:
             return ""
+
+    async def elements(self, limit: int = 400) -> str:
+        """調整用：画面の押せる部品の一覧を文字で返す。入力欄に入っている値（暗証番号など）は含めない。"""
+        lines: list[str] = []
+        for fi, frame in enumerate(self.page.frames):
+            try:
+                rows = await frame.evaluate(ELEMENTS_JS)
+            except Exception:
+                continue
+            lines += [f"f{fi} {r}" for r in rows]
+            if len(lines) >= limit:
+                break
+        return "\n".join(lines[:limit])
 
     async def dump(self, tag: str) -> None:
         """調整用：画面とHTMLを保存する。"""
@@ -270,7 +308,8 @@ class SiteBot:
             for t in tickets:
                 combo = t["combo"]
                 targets = [(1, combo[0])] if len(combo) == 1 else [(i + 1, n) for i, n in enumerate(combo)]
-                await self.run("ticket", {**base, "bet_type": t["bet_type"], "units": t["amount"] // 100,
+                await self.run("ticket", {**base, "bet_type": t["bet_type"],
+                                          "bet_label": self.flow.get("bet_labels", {}).get(t["bet_type"], t["bet_type"]), "units": t["amount"] // 100,
                                           "amount": t["amount"], "combo": "-".join(map(str, combo))}, targets)
             await self.run("confirm", base)  # ここで合計金額が一致するか確認する
             if mode != "live":
