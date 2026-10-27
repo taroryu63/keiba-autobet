@@ -144,3 +144,31 @@ def test_connection_check_continues_past_time(site):
     bot.flow["post_time"] = [{"do": "click", "sel": "#nothing", "timeout": 500}]
     steps = asyncio.run(run_check(bot, "東京", 11, 5))
     assert [s["ok"] for s in steps] == [True, False, True, True, True, True]
+
+
+def test_follows_new_window(site, tmp_path):
+    form = tmp_path / "form.html"
+    form.write_text('<meta charset="utf-8"><input id="x"><p id="ok">マークカード画面</p>', encoding="utf-8")
+    bot = site()
+    page = tmp_path / "mock.html"
+    page.write_text(page.read_text(encoding="utf-8").replace(
+        "<body>", f"<body><a id='mc' href='{form.as_uri()}' target='_blank'>マークカード投票</a>"), encoding="utf-8")
+
+    async def go():
+        async with bot:
+            await bot.login()
+            await bot._step({"do": "click", "sel": "#mc", "new_window": True}, {})
+            await bot._step({"do": "fill", "sel": "#x", "value": "1"}, {})
+            return await bot.page.inner_text("#ok")
+    assert asyncio.run(go()) == "マークカード画面"
+
+
+def test_new_window_click_still_fails_when_button_missing(site):
+    bot = site()
+
+    async def go():
+        async with bot:
+            await bot.login()
+            await bot._step({"do": "click", "sel": "#none", "new_window": True, "timeout": 500}, {})
+    with pytest.raises(Exception):
+        asyncio.run(go())

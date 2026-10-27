@@ -18,6 +18,7 @@ data/selectors/*.json を置くとそちらが優先される（サーバー上�
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
@@ -25,6 +26,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from playwright.async_api import Browser, Page, async_playwright
+from playwright.async_api import TimeoutError as PWTimeout
 
 from ..config import JST, ROOT, config
 from ..db import now
@@ -91,7 +93,13 @@ class SiteBot:
         ctx.set_default_timeout(self.flow.get("timeout", 15000))
         self.page = await ctx.new_page()
         self.page.on("dialog", lambda d: d.accept())  # 確認ダイアログは常にOK
+        ctx.on("page", self._on_new_window)
         return self
+
+    def _on_new_window(self, page: Page) -> None:
+        """サイトが新しいウィンドウ（投票画面など）を開いたら、以後はそちらを操作する。"""
+        page.on("dialog", lambda d: d.accept())
+        self.page = page
 
     async def __aexit__(self, *exc) -> None:
         if self.browser:
@@ -148,7 +156,21 @@ class SiteBot:
             await self._visible(sel).fill(render(step["value"], vars), timeout=t)
         elif do == "click":
             try:
-                await self._visible(sel).click(timeout=t)
+                if step.get("new_window"):
+                    # 新しいウィンドウが開くかもしれないボタン。開いたらそちらへ、開かなければ今の画面のまま
+                    waiter = asyncio.ensure_future(p.context.wait_for_event("page", timeout=5000))
+                    try:
+                        await self._visible(sel).click(timeout=t)
+                    except Exception:
+                        waiter.cancel()
+                        raise
+                    try:
+                        self.page = await waiter
+                        await self.page.wait_for_load_state("domcontentloaded")
+                    except PWTimeout:
+                        pass
+                else:
+                    await self._visible(sel).click(timeout=t)
             except Exception:
                 # ボタンが押せないとき、サイトのJavaScriptを直接呼ぶ（"js_fallback" がある場合のみ）
                 if not step.get("js_fallback"):
