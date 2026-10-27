@@ -158,3 +158,37 @@ def test_amounts_go_to_the_right_rows(spat4):
     res, rows = asyncio.run(go())
     assert res.status == "rehearsed", res.message
     assert [(r["c"], r["v"]) for r in rows] == [("3", "7"), ("5", "1")]
+
+
+ODDS_TABLE = """<table>
+<tr><th>枠</th><th>馬</th><th>馬名</th><th>単勝式オッズ</th><th>複勝式オッズ</th></tr>
+<tr><td>1</td><td>1</td><td>エレパイオ</td><td><a>23.2</a></td><td>3.0-13</td></tr>
+<tr><td>2</td><td>2</td><td>ラビダニーニャ</td><td><a>23.1</a></td><td>2.2-9.3</td></tr>
+<tr><td rowspan="2">3</td><td>3</td><td>キタノプレミアム</td><td><a>8.6</a></td><td>2.1-8.7</td></tr>
+<tr><td>4</td><td>トーセンアマンダ</td><td><a>68.7</a></td><td>8.1-39</td></tr>
+<tr><td rowspan="2">4</td><td>5</td><td>ヴァンクラッセ</td><td><a>62.9</a></td><td>10-53</td></tr>
+<tr><td>6</td><td>ラブリーファンク</td><td><a>71.5</a></td><td>5.3-25</td></tr>
+<tr><td rowspan="2">8</td><td>13</td><td>ハヴィティベイ</td><td><a>170</a></td><td>14-71</td></tr>
+<tr><td>14</td><td>アイビーブリザード</td><td><a>1.3</a></td><td>1.0-1.0</td></tr>
+</table>"""
+
+
+def test_reads_odds_inside_frames(spat4, tmp_path):
+    """オッズの画面は区画（フレーム）に分かれていて、枠番の欄が2頭分の高さの行がある。"""
+    import html as h
+    page = tmp_path / "odds.html"
+    page.write_text(f'<meta charset="utf-8"><iframe srcdoc="{h.escape(ODDS_TABLE)}"></iframe>', encoding="utf-8")
+    read = [x for x in spat4.flow["read_odds"] if x["do"] == "read"][0]
+
+    async def go():
+        async with spat4 as bot:
+            await bot.page.goto(page.as_uri())
+            out = {}
+            for n in (1, 3, 4, 5, 6, 13, 14):
+                v = {"num": n}
+                await bot._step(read, v)
+                out[n] = v["odds"]
+            return out
+    # 4番は枠3の2行目（枠の欄がない行）。5番の行より前に「枠4」の欄があっても取り違えない
+    # 13番の170倍のように、小数点のないオッズも読む
+    assert asyncio.run(go()) == {1: 23.2, 3: 8.6, 4: 68.7, 5: 62.9, 6: 71.5, 13: 170.0, 14: 1.3}

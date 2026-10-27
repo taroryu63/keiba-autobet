@@ -239,6 +239,24 @@ class SiteBot:
                 raise StepError(f"画面に出ている「{text or sel}」の{index + 1}番目が見つかりません")
             await asyncio.sleep(0.3)
 
+    async def _find(self, sel: str, timeout: int):
+        """画面に見えている要素のうち最初のものを、ページの中の区画（フレーム）もすべて探して返す。
+        サイトによっては同じボタンが隠れて複数あったり、古い作りで画面が区画に分かれていたりするため。
+        見つからないまま timeout になったらエラーにする。"""
+        deadline = asyncio.get_running_loop().time() + timeout / 1000
+        while True:
+            for frame in self.page.frames:
+                loc = frame.locator(sel).filter(visible=True)
+                try:
+                    if await loc.count():
+                        return loc.first
+                except Exception as e:
+                    if "pars" in str(e) or "selector" in str(e).lower() and "detached" not in str(e):
+                        raise  # セレクタの書き方の間違いはすぐに知らせる
+            if asyncio.get_running_loop().time() > deadline:
+                raise StepError(f"{timeout}ms 待っても見つかりません: {sel}")
+            await asyncio.sleep(0.25)
+
     def _visible(self, sel: str):
         """画面に見えている要素のうち最初のもの。サイトによっては同じボタンが隠れて複数あるため。"""
         return self.page.locator(sel).filter(visible=True).first
@@ -257,6 +275,11 @@ class SiteBot:
                 return
             sel = await self._mark_onscreen(sel or ONSCREEN_DEFAULT, render(step.get("text", ""), vars),
                                             int(render(str(step.get("index", 0)), vars)), t or 8000)
+        loc = None
+        if sel and do in ("fill", "click", "select", "wait_for", "read", "read_time", "has"):
+            default = 3000 if do == "has" else (5000 if do in ("read", "read_time") else self.flow.get("timeout", 15000))
+            loc = await self._find(sel, t or default)
+            t = 2000  # 見つけた後の操作そのものは短く
         if do == "main_window":
             # 別ウィンドウ（投票画面など）を閉じて、最初のウィンドウに戻る
             pages = p.context.pages
@@ -267,14 +290,14 @@ class SiteBot:
         if do == "goto":
             await p.goto(render(step["url"], vars), wait_until="domcontentloaded")
         elif do == "fill":
-            await self._visible(sel).fill(render(step["value"], vars), timeout=t)
+            await loc.fill(render(step["value"], vars), timeout=t)
         elif do == "click":
             try:
                 if step.get("new_window"):
                     # 新しいウィンドウが開くかもしれないボタン。開いたらそちらへ、開かなければ今の画面のまま
                     waiter = asyncio.ensure_future(p.context.wait_for_event("page", timeout=5000))
                     try:
-                        await self._visible(sel).click(timeout=t)
+                        await loc.click(timeout=t)
                     except Exception:
                         waiter.cancel()
                         raise
@@ -284,37 +307,40 @@ class SiteBot:
                     except PWTimeout:
                         pass
                 else:
-                    await self._visible(sel).click(timeout=t)
+                    await loc.click(timeout=t)
             except Exception:
                 # ボタンが押せないとき、サイトのJavaScriptを直接呼ぶ（"js_fallback" がある場合のみ）
                 if not step.get("js_fallback"):
                     raise
                 await p.evaluate(step["js_fallback"])
         elif do == "select":
-            await self._visible(sel).select_option(label=render(step["label"], vars), timeout=t)
+            await loc.select_option(label=render(step["label"], vars), timeout=t)
         elif do == "press":
             await p.keyboard.press(step["key"])
         elif do == "wait":
             await p.wait_for_timeout(step["ms"])
         elif do == "wait_for":
-            await self._visible(sel).wait_for(state="visible", timeout=t)
+            await loc.wait_for(state="visible", timeout=t)
         elif do == "read":
-            text = await self._visible(sel).inner_text(timeout=t or 5000)
-            # "decimal": 小数点のある数字だけを読む（オッズの行に馬番・枠番などの整数も並んでいるため）
-            pat = r"\d+\.\d+" if step.get("pattern") == "decimal" else r"\d[\d,]*(?:\.\d+)?"
-            m = re.search(pat, text)
+            text = await loc.inner_text(timeout=t or 5000)
+            # "after_name": 馬名（数字でない言葉）のすぐ後ろの数字を読む。
+            #   オッズの行は「枠 馬番 馬名 単勝 複勝」と並び、170倍のように小数点のないオッズもあるため
+            if step.get("pattern") == "after_name":
+                m = re.search(r"[^\d\s.,\-]+\s+(\d[\d,]*(?:\.\d+)?)", text)
+            else:
+                m = re.search(r"(\d[\d,]*(?:\.\d+)?)", text)
             if not m:
                 raise StepError(f"数字を読み取れません: {text!r}")
-            vars[step["var"]] = float(m.group(0).replace(",", ""))
+            vars[step["var"]] = float(m.group(1).replace(",", ""))
         elif do == "read_time":
-            text = await self._visible(sel).inner_text(timeout=t or 5000)
+            text = await loc.inner_text(timeout=t or 5000)
             m = re.search(r"(\d{1,2})[:：時](\d{2})", text)
             if not m:
                 raise StepError(f"時刻を読み取れません: {text!r}")
             vars[step["var"]] = f"{int(m.group(1)):02d}:{m.group(2)}"
         elif do == "has":
             try:
-                await self._visible(sel).wait_for(state="visible", timeout=t or 3000)
+                await loc.wait_for(state="visible", timeout=t or 3000)
                 vars[step["var"]] = 1
             except Exception:
                 vars[step["var"]] = 0

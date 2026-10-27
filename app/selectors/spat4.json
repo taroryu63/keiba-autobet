@@ -144,7 +144,7 @@
     {
       "do": "read",
       "sel": "tr:has(td:nth-child(2):text-is('{num}')), tr:has(td:nth-child(1):text-is('{num}'))",
-      "pattern": "decimal",
+      "pattern": "after_name",
       "var": "odds",
       "timeout": 6000
     }
