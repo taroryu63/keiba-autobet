@@ -411,14 +411,21 @@ class SiteBot:
     async def _enter_groups(self, tickets: list[dict], base: dict) -> None:
         """マークカード式のサイト（SPAT4）。
         カードに印をつける → 「投票金額入力へ」→ 1行ずつ金額 →（続きがあれば「買い目を追加する」）を繰り返す。
+        カードの入力は券種ごとに分ける（途中で券種を変えると、それまでの印が消えるため）。
         ワイドは◎からの流しにまとめて、カード1枚で入れる。"""
         per_page = self.flow.get("cards_per_page", 6)
         groups = []
         nagashi, rest = wide_nagashi(tickets) if self.flow.get("nagashi") else (None, tickets)
         if nagashi:
             groups.append(("nagashi", nagashi))
-        for i in range(0, len(rest), per_page):
-            groups.append(("cards", rest[i:i + per_page]))
+        # SPAT4は、カードの途中で券種を変えると入力が消える（「式別を変更すると選択した内容がクリアされます」）。
+        # そのため券種ごとに分け、それぞれ金額まで入れてから「買い目を追加する」で次の券種に進む
+        by_type: dict[str, list[dict]] = {}
+        for t in rest:
+            by_type.setdefault(t["bet_type"], []).append(t)
+        for same in by_type.values():
+            for i in range(0, len(same), per_page):
+                groups.append(("cards", same[i:i + per_page]))
         labels = self.flow.get("bet_labels", {})
         row = 0
         for gi, (kind, g) in enumerate(groups):

@@ -55,7 +55,10 @@ function card(box, k) {
 }
 for (let k = 0; k < 6; k++) card(document.getElementById('tab-c'), k);
 card(document.getElementById('tab-n'), 0); card(document.getElementById('tab-n'), 1);
-document.querySelectorAll('.t').forEach((e) => e.onclick = () => { type = e.textContent;
+document.querySelectorAll('.t').forEach((e) => e.onclick = () => {
+  // 本物と同じく、カードに印がある状態で券種を変えると、印が消える
+  if (mode === 'c' && window.log.length && type !== e.textContent) { window.log = []; window.cleared = true; }
+  type = e.textContent;
   if (mode === 'c') { const k = marks.length; marks[k] = []; window.pending = k; } });
 // 複・連勝複式: 券種を押すと次のカードに入る。カードの番号は押した順に関係なく button の位置で決まる
 document.getElementById('tab-c').addEventListener('click', (e) => {
@@ -129,19 +132,19 @@ def test_holiday_order_on_mark_cards(spat4):
             await bot.login()
             res = await bot.vote(order, "rehearsal")
             rows = await bot.page.evaluate("window.rows")
+            assert not await bot.page.evaluate("window.cleared")  # 券種を途中で変えて印を消していない
             filled = await bot.page.evaluate(
                 "[document.querySelector('[name=cfm_ansho]').value, document.querySelector('[name=cfm_amount]').value]")
             return res, rows, filled
     res, rows, filled = asyncio.run(go())
     assert res.status == "rehearsed", res.message
     assert filled == ["1234", "900"]  # 暗証番号と、確認のための合計金額
-    # 流し1行、カード1回目（単勝＋複勝5点）、買い目を追加して2回目（複勝1点）
+    # 流し1行、単勝1点、複勝6点（券種ごとに分けて入れる）
     assert [(r["t"], r["c"], r["v"]) for r in rows] == [
         ("ワイド流し", "1→2.3", "1"),
         ("単勝", "1", "1"),
         ("複勝", "2", "1"), ("複勝", "3", "1"), ("複勝", "4", "1"), ("複勝", "5", "1"),
-        ("複勝", "6", "1"),
-        ("複勝", "7", "1"),
+        ("複勝", "6", "1"), ("複勝", "7", "1"),
     ]
 
 
