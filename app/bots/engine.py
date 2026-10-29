@@ -153,7 +153,10 @@ class SiteBot:
         if missing:
             raise StepError(f"{self.site} のログイン情報が未設定です: {', '.join(missing)}")
         self._pw = await async_playwright().start()
-        kw = {"headless": config.headless}
+        # メモリの少ないサーバー（1GB）でも動くよう、ブラウザのメモリ使用を抑える
+        kw = {"headless": config.headless,
+              "args": ["--disable-dev-shm-usage", "--disable-gpu", "--disable-extensions",
+                       "--renderer-process-limit=2", "--js-flags=--max-old-space-size=256"]}
         if config.chromium_path:
             kw["executable_path"] = config.chromium_path
         self.browser = await self._pw.chromium.launch(**kw)

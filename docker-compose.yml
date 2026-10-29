@@ -7,6 +7,10 @@ services:
       - ./data:/data
     expose:
       - "8000"
+    # メモリを使いすぎたときに止まるのをアプリだけにして、サーバー全体が固まらないようにする
+    mem_limit: 650m
+    memswap_limit: 1500m
+    shm_size: 128m
   # HTTPS（証明書の取得・更新は自動）。DOMAIN を .env に書く
   caddy:
     image: caddy:2
