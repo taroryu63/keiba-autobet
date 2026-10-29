@@ -234,3 +234,16 @@ def test_splits_into_batches(site):
     assert res.status == "done" and "2回に分けて" in res.message
     assert buys == 2
     assert bought == [["単勝", "4", 1200], ["ワイド", "4-5", 100], ["複勝", "5", 200]]
+
+
+def test_js_fallback_when_button_has_no_size(site):
+    """SPAT4のログインボタンのように、大きさ0の部品に見えて押せないときは、サイトの処理を直接呼ぶ。"""
+    bot = site()
+
+    async def go():
+        async with bot:
+            await bot.page.set_content(
+                '<a class="loginbtn" onclick="window.done=1"></a><script>function loginCheck(){window.done=2}</script>')
+            await bot._step({"do": "click", "sel": "a.loginbtn", "timeout": 800, "js_fallback": "loginCheck()"}, {})
+            return await bot.page.evaluate("window.done")
+    assert asyncio.run(go()) == 2

@@ -281,7 +281,15 @@ class SiteBot:
         loc = None
         if sel and do in ("fill", "click", "select", "wait_for", "read", "read_time", "has"):
             default = 3000 if do == "has" else (5000 if do in ("read", "read_time") else self.flow.get("timeout", 15000))
-            loc = await self._find(sel, t or default)
+            try:
+                loc = await self._find(sel, t or default)
+            except StepError:
+                # ボタンが見つからない・押せないとき、サイトのJavaScriptを直接呼ぶ（"js_fallback" がある場合のみ）。
+                # SPAT4のログインボタンは大きさ0の部品に見えるため
+                if do == "click" and step.get("js_fallback"):
+                    await p.evaluate(step["js_fallback"])
+                    return
+                raise
             t = 2000  # 見つけた後の操作そのものは短く
         if do == "main_window":
             # 別ウィンドウ（投票画面など）を閉じて、最初のウィンドウに戻る
