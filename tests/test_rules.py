@@ -175,3 +175,10 @@ def test_netkeiba_parsers():
                {"bet_type": "ワイド", "combo": [9, 4], "amount": 100},
                {"bet_type": "複勝", "combo": [7], "amount": 100}]
     assert r.payout(tickets) == 1020 + 620 + 1220
+
+
+def test_result_without_rank_table_uses_tansho_payout():
+    """着順の表が読めなくても、払戻金があれば確定とし、1着は単勝の馬とする（本物の地方競馬のページで起きた）。"""
+    html = RESULT_HTML.split('<table class="Payout_Detail_Table">')[1]
+    r = parse_result('<table class="Payout_Detail_Table">' + html)
+    assert r.ranks == {} and r.settled and r.winner == 4

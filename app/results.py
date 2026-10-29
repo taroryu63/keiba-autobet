@@ -21,7 +21,7 @@ _last_fetch = 0.0
 _cache: dict[str, tuple[float, str]] = {}
 
 PAYOUT_ROWS = {"Tansho": "単勝", "Fukusho": "複勝", "Wakuren": "枠連", "Umaren": "馬連",
-               "Wide": "ワイド", "Umatan": "馬単", "Fuken": "3連複", "Tan3": "3連単"}
+               "Wide": "ワイド", "Umatan": "馬単", "Fuken": "3連複", "Fuku3": "3連複", "Tan3": "3連単"}
 TYPE_SIZE = {"単勝": 1, "複勝": 1, "枠連": 2, "馬連": 2, "ワイド": 2, "馬単": 2, "3連複": 3, "3連単": 3}
 ORDERED = {"単勝", "複勝", "馬単", "3連単"}
 
@@ -35,7 +35,11 @@ class RaceResult:
 
     @property
     def winner(self) -> int | None:
-        return next((h for h, r in self.ranks.items() if r == 1), None)
+        w = next((h for h, r in self.ranks.items() if r == 1), None)
+        if w is None and len(self.pay.get("単勝", {})) == 1:
+            # 着順の表が読めなくても、単勝の払戻金の馬が1着（同着のときは単勝が2つになるので決めない）
+            w = next(iter(self.pay["単勝"]))[0]
+        return w
 
     def payout(self, tickets: list[dict]) -> int:
         """馬券の払戻合計（円）。"""
@@ -132,7 +136,8 @@ def parse_result(html: str) -> RaceResult:
             for combo, yen in zip(combos, pays):
                 key = combo if bet in ORDERED else tuple(sorted(combo))
                 res.pay.setdefault(bet, {})[key] = yen
-    res.settled = bool(res.pay.get("単勝")) and bool(res.ranks)
+    # 払戻金が出ていれば確定（着順の表の作りが変わっても、払戻金で判断できるように）
+    res.settled = bool(res.pay.get("単勝"))
     return res
 
 
