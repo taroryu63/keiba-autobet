@@ -290,7 +290,7 @@ class SiteBot:
                     await p.evaluate(step["js_fallback"])
                     return
                 raise
-            t = 2000  # 見つけた後の操作そのものは短く
+            t = t or default  # 見つけた後の操作（押したあとの画面の切り替わり待ちも含む）は、同じ時間まで待つ
         if do == "main_window":
             # 別ウィンドウ（投票画面など）を閉じて、最初のウィンドウに戻る
             pages = p.context.pages
@@ -306,12 +306,19 @@ class SiteBot:
             try:
                 if step.get("new_window"):
                     # 新しいウィンドウが開くかもしれないボタン。開いたらそちらへ、開かなければ今の画面のまま
-                    waiter = asyncio.ensure_future(p.context.wait_for_event("page", timeout=5000))
+                    waiter = asyncio.ensure_future(p.context.wait_for_event("page", timeout=max(t, 15000)))
                     try:
                         await loc.click(timeout=t)
                     except Exception:
-                        waiter.cancel()
-                        raise
+                        # 押した直後に別ウィンドウが開くと、押す操作そのものが時間切れ扱いになることがある。
+                        # ウィンドウが開いていれば成功とみなす
+                        try:
+                            self.page = await asyncio.wait_for(asyncio.shield(waiter), 5)
+                            await self.page.wait_for_load_state("domcontentloaded")
+                            return
+                        except Exception:
+                            waiter.cancel()
+                            raise
                     try:
                         self.page = await waiter
                         await self.page.wait_for_load_state("domcontentloaded")
