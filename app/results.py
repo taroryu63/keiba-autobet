@@ -20,10 +20,12 @@ UA = "Mozilla/5.0 (keiba-autobet; personal use)"
 _last_fetch = 0.0
 _cache: dict[str, tuple[float, str]] = {}
 
-PAYOUT_ROWS = {"Tansho": "単勝", "Fukusho": "複勝", "Wakuren": "枠連", "Umaren": "馬連",
-               "Wide": "ワイド", "Umatan": "馬単", "Fuken": "3連複", "Fuku3": "3連複", "Tan3": "3連単"}
-TYPE_SIZE = {"単勝": 1, "複勝": 1, "枠連": 2, "馬連": 2, "ワイド": 2, "馬単": 2, "3連複": 3, "3連単": 3}
-ORDERED = {"単勝", "複勝", "馬単", "3連単"}
+# 払戻金の表の券種名（ページの表記 → このアプリでの名前）
+BET_NAMES = {"単勝": "単勝", "複勝": "複勝", "枠連": "枠連", "枠複": "枠連", "枠単": "枠単", "馬連": "馬連",
+             "馬複": "馬連", "ワイド": "ワイド", "馬単": "馬単", "3連複": "3連複", "三連複": "3連複",
+             "3連単": "3連単", "三連単": "3連単"}
+TYPE_SIZE = {"単勝": 1, "複勝": 1, "枠連": 2, "枠単": 2, "馬連": 2, "ワイド": 2, "馬単": 2, "3連複": 3, "3連単": 3}
+ORDERED = {"単勝", "複勝", "枠単", "馬単", "3連単"}
 
 
 @dataclass
@@ -105,37 +107,43 @@ def _ints(text: str) -> list[int]:
 
 
 def parse_result(html: str) -> RaceResult:
+    """結果ページを読む。作り（2026/10の地方競馬のページで確認）:
+    着順の表の各行  td.Result_Num > div.Rank（着順）、td.Num が2つ（枠番・馬番の順）、
+                    span.Odds_Ninki（名前に反して中身は単勝オッズ）
+    払戻金の表      table.Payout_Detail_Table の各行。th が券種名、td.Result が組番、td.Payout が金額
+    """
     soup = BeautifulSoup(html, "html.parser")
     res = RaceResult(settled=False)
-    for tr in soup.select("table#All_Result_Table tr.HorseList, table.RaceTable01 tr.HorseList"):
-        rank_el = tr.select_one(".Rank, td.Result_Num")
+    for tr in soup.select("table#All_Result_Table tr, table.RaceTable01 tr"):
+        rank_el = tr.select_one("div.Rank") or tr.select_one("td.Result_Num")
         tds = tr.select("td.Num")
         if not rank_el or len(tds) < 2:
             continue
-        rank = _ints(rank_el.get_text())
-        num = _ints(tds[1].get_text())
+        rank, num = _ints(rank_el.get_text()), _ints(tds[1].get_text())
         if not num:
             continue
         horse = num[0]
-        if rank:
+        if rank:  # 取消・除外などは着順が数字でない
             res.ranks[horse] = rank[0]
-        odds_el = tr.select_one("td.Odds, .Odds")
+        odds_el = tr.select_one("span.Odds_Ninki") or tr.select_one("td.Odds.Txt_R") or tr.select_one("td.Odds")
         if odds_el:
             m = re.search(r"\d+(?:\.\d+)?", odds_el.get_text())
             if m:
                 res.odds[horse] = float(m.group(0))
-    for cls, bet in PAYOUT_ROWS.items():
-        for tr in soup.select(f"table.Payout_Detail_Table tr.{cls}"):
-            r_el, p_el = tr.select_one("td.Result"), tr.select_one("td.Payout")
-            if not r_el or not p_el:
-                continue
-            nums = _ints(r_el.get_text(" "))
-            pays = _ints(p_el.get_text(" ").replace("円", " "))
-            k = TYPE_SIZE[bet]
-            combos = [tuple(nums[i:i + k]) for i in range(0, len(nums) - k + 1, k)]
-            for combo, yen in zip(combos, pays):
-                key = combo if bet in ORDERED else tuple(sorted(combo))
-                res.pay.setdefault(bet, {})[key] = yen
+    for tr in soup.select("table.Payout_Detail_Table tr"):
+        th, r_el, p_el = tr.select_one("th"), tr.select_one("td.Result"), tr.select_one("td.Payout")
+        if not th or not r_el or not p_el:
+            continue
+        bet = BET_NAMES.get(re.sub(r"\s+", "", th.get_text()))
+        if not bet:
+            continue
+        nums = _ints(r_el.get_text(" "))
+        pays = _ints(p_el.get_text(" ").replace("円", " "))
+        k = TYPE_SIZE[bet]
+        combos = [tuple(nums[i:i + k]) for i in range(0, len(nums) - k + 1, k)]
+        for combo, yen in zip(combos, pays):
+            key = combo if bet in ORDERED else tuple(sorted(combo))
+            res.pay.setdefault(bet, {})[key] = yen
     # 払戻金が出ていれば確定（着順の表の作りが変わっても、払戻金で判断できるように）
     res.settled = bool(res.pay.get("単勝"))
     return res

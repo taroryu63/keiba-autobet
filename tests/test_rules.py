@@ -153,15 +153,42 @@ RACE_LIST_HTML = """
 <div class="Race_Num"><span>11R</span></div><span class="RaceList_Itemtime">15:40</span></a></li>
 </ul></dd></dl>"""
 
+# 本物の地方競馬の結果ページ（大井 2026/10/29 1R）と同じ作り
 RESULT_HTML = """
-<table id="All_Result_Table">
-<tr class="HorseList"><td class="Result_Num"><div class="Rank">1</div></td><td class="Num Waku2">2</td><td class="Num Txt_C"><div>4</div></td><td class="Odds"><span>3.4</span></td></tr>
-<tr class="HorseList"><td class="Result_Num"><div class="Rank">2</div></td><td class="Num Waku5">5</td><td class="Num Txt_C"><div>9</div></td><td class="Odds"><span>12.1</span></td></tr>
+<table class="RaceTable01 RaceCommon_Table ResultRefund Table_Show_All" id="All_Result_Table">
+<tr class="Header"><th class="Result_Num">着<br />順</th><th class="Num">枠</th><th class="Num">馬<br />番</th>
+<th class="Horse_Info"><div class="Horse_Name">馬名</div></th><th class="Odds">単勝<br>オッズ</th></tr>
+<tr >
+<td class="Result_Num"><div class="Rank">1</div></td>
+<td class="Num Waku6"><div>6</div></td>
+<td class="Num Waku"><div>8</div></td>
+<td class="Horse_Info"><span class="Horse_Name"><a title="アイトカコイトカ">アイトカコイトカ</a></span></td>
+<td class="Odds BgYellow Txt_C"><span class="OddsPeople">1</span></td>
+<td class="Odds Txt_R"><span  class="Odds_Ninki">2.6</span></td>
+</tr>
+<tr >
+<td class="Result_Num"><div class="Rank">2</div></td>
+<td class="Num Waku3"><div>3</div></td>
+<td class="Num Waku"><div>3</div></td>
+<td class="Horse_Info"><span class="Horse_Name"><a>ブライトゲイザー</a></span></td>
+<td class="Odds BgYellow Txt_C"><span class="OddsPeople">4</span></td>
+<td class="Odds Txt_R"><span  class="Odds_Ninki">9.8</span></td>
+</tr>
+<tr >
+<td class="Result_Num"><div class="Rank">取消</div></td>
+<td class="Num Waku1"><div>1</div></td>
+<td class="Num Waku"><div>1</div></td>
+<td class="Horse_Info"><span class="Horse_Name"><a>トリケシ</a></span></td>
+<td class="Odds BgYellow Txt_C"><span class="OddsPeople"></span></td>
+<td class="Odds Txt_R"><span  class="Odds_Ninki">---</span></td>
+</tr>
 </table>
 <table class="Payout_Detail_Table">
-<tr class="Tansho"><th>単勝</th><td class="Result"><div><span>4</span></div></td><td class="Payout"><span>340円</span></td></tr>
-<tr class="Fukusho"><th>複勝</th><td class="Result"><div><span>4</span></div><div><span>9</span></div><div><span>7</span></div></td><td class="Payout"><span>150円<br />310円<br />1,220円</span></td></tr>
-<tr class="Wide"><th>ワイド</th><td class="Result"><ul><li><span>4</span></li><li><span>9</span></li></ul><ul><li><span>4</span></li><li><span>7</span></li></ul><ul><li><span>7</span></li><li><span>9</span></li></ul></td><td class="Payout"><span>620円<br />2,150円<br />5,890円</span></td></tr>
+<tr class="Tansho"><th>単勝</th><td class="Result"><div><span>8</span></div></td><td class="Payout"><span>260円</span></td></tr>
+<tr class="Fukusho"><th>複勝</th><td class="Result"><div><span>8</span></div><div><span>3</span></div><div><span>2</span></div></td><td class="Payout"><span>140円<br />260円<br />4,800円</span></td></tr>
+<tr class="Wide"><th>ワイド</th><td class="Result"><ul><li><span>3</span></li><li><span>8</span></li></ul><ul><li><span>2</span></li><li><span>8</span></li></ul><ul><li><span>2</span></li><li><span>3</span></li></ul></td><td class="Payout"><span>470円<br />11,400円<br />18,350円</span></td></tr>
+<tr class="Wakutan"><th>枠単</th><td class="Result"><ul><li><span>6</span></li><li><span>3</span></li></ul></td><td class="Payout"><span>1,860円</span></td></tr>
+<tr class="Fuku3"><th>3連複</th><td class="Result"><ul><li><span>2</span></li><li><span>3</span></li><li><span>8</span></li></ul></td><td class="Payout"><span>56,090円</span></td></tr>
 </table>"""
 
 
@@ -169,16 +196,19 @@ def test_netkeiba_parsers():
     rl = parse_race_list(RACE_LIST_HTML, ["東京", "京都"])
     assert rl[("東京", 11)] == {"race_id": "202605040811", "post_time": "15:40"}
     r = parse_result(RESULT_HTML)
-    assert r.settled and r.winner == 4 and r.odds[9] == 12.1
-    assert r.pay["複勝"][(7,)] == 1220 and r.pay["ワイド"][(4, 7)] == 2150
-    tickets = [{"bet_type": "単勝", "combo": [4], "amount": 300},
-               {"bet_type": "ワイド", "combo": [9, 4], "amount": 100},
-               {"bet_type": "複勝", "combo": [7], "amount": 100}]
-    assert r.payout(tickets) == 1020 + 620 + 1220
+    assert r.settled and r.winner == 8
+    assert r.ranks == {8: 1, 3: 2}            # 取消の馬は着順なし
+    assert r.odds[8] == 2.6 and r.odds[3] == 9.8  # 人気（OddsPeople）ではなく単勝オッズを読む
+    assert r.pay["複勝"][(2,)] == 4800 and r.pay["ワイド"][(2, 8)] == 11400
+    assert r.pay["枠単"][(6, 3)] == 1860 and r.pay["3連複"][(2, 3, 8)] == 56090
+    tickets = [{"bet_type": "単勝", "combo": [8], "amount": 300},
+               {"bet_type": "ワイド", "combo": [8, 3], "amount": 100},
+               {"bet_type": "複勝", "combo": [2], "amount": 100}]
+    assert r.payout(tickets) == 780 + 470 + 4800
 
 
 def test_result_without_rank_table_uses_tansho_payout():
     """着順の表が読めなくても、払戻金があれば確定とし、1着は単勝の馬とする（本物の地方競馬のページで起きた）。"""
     html = RESULT_HTML.split('<table class="Payout_Detail_Table">')[1]
     r = parse_result('<table class="Payout_Detail_Table">' + html)
-    assert r.ranks == {} and r.settled and r.winner == 4
+    assert r.ranks == {} and r.settled and r.winner == 8
