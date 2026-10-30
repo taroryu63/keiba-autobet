@@ -17,7 +17,8 @@ DEFAULT_SETTINGS = {
     "mode": "off",           # off=ブラウザを使わない練習 / rehearsal=購入直前まで / live=本番
     "vote_offset_min": 5,    # 発走の何分前に投票するか
     "weekday_limit": 3000,   # 平日の資金（円）。平日は複勝の転がしのみ
-    "holiday_limit": 10000,  # 土日祝の上限（円）
+    "holiday_limit": 10000,  # 土日祝の◎★の買い方の上限（円）
+    "weekday_bet_limit": 10000,  # 平日の◎★の買い方の上限（円）。転がしの資金とは別
     "roll_stake": 500,       # 転がしの1回目の金額（円）
     "tansho_base": 100,      # 休日の単勝の最初の金額（円）。外れるたびにこの額ずつ増やす
     "tansho_min_odds": 2.1,  # この倍率以下の単勝は見送る
@@ -199,9 +200,9 @@ class DB:
             rows = c.execute(q + " ORDER BY vote_at, id", args).fetchall()
         return [_row(r) for r in rows]
 
-    def day_total(self, race_date: str) -> int:
+    def day_total(self, race_date: str, include_roll: bool = True) -> int:
         """その日に自分の資金から使う額。転がし以外の買い目の合計＋転がしで使った元手。
-        転がしの2回目以降は払戻金を賭けているので数えない。"""
+        転がしの2回目以降は払戻金を賭けているので数えない。include_roll=False なら転がしを除く。"""
         with self.conn() as c:
             normal = c.execute(
                 f"SELECT COALESCE(SUM(total),0) FROM orders WHERE race_date=? AND strategy<>'roll'"
@@ -211,7 +212,7 @@ class DB:
             chain = c.execute(
                 "SELECT COALESCE(SUM(own_spent),0) FROM chains WHERE race_date=? AND kind='roll'", (race_date,)
             ).fetchone()[0]
-        return normal + chain
+        return normal + (chain if include_roll else 0)
 
     def find_duplicate(self, dedupe_key: str) -> dict | None:
         with self.conn() as c:

@@ -96,13 +96,13 @@ def _res(winner, odds, fuku=None, wide=None, tan=None):
     return r
 
 
-def test_sim_holiday_ends_on_tansho_hit():
+def test_sim_holiday_stops_only_tansho_after_hit():
     races = [
         {"venue": "東京", "race_no": 1, "post_time": "10:00", "honmei": 1, "stars": [2]},
         {"venue": "東京", "race_no": 2, "post_time": "10:30", "honmei": 3, "stars": []},
         {"venue": "東京", "race_no": 3, "post_time": "11:00", "honmei": 5, "stars": [6]},  # 1.8倍で単勝見送り
         {"venue": "東京", "race_no": 4, "post_time": "11:30", "honmei": 7, "stars": []},   # 的中
-        {"venue": "東京", "race_no": 5, "post_time": "12:00", "honmei": 9, "stars": [1]},  # 終了済み
+        {"venue": "東京", "race_no": 5, "post_time": "12:00", "honmei": 9, "stars": [1]},  # 単勝は終了済み
     ]
     res = {
         ("東京", 1): _res(4, {1: 5.0, 4: 3.0}, fuku={(2,): 150}),
@@ -117,9 +117,10 @@ def test_sim_holiday_ends_on_tansho_hit():
     assert [t["amount"] for t in rows[1]["tickets"] if t["bet_type"] == "単勝"] == [200]
     assert not any(t["bet_type"] == "単勝" for t in rows[2]["tickets"]) and "1.8倍" in rows[2]["note"]
     assert [t["amount"] for t in rows[3]["tickets"] if t["bet_type"] == "単勝"] == [300]
-    assert rows[4]["cost"] == 0 and "終了" in rows[4]["note"]
-    # 1R: 単100+ワイド100+複100=300 払戻150 / 2R: 200 / 3R: ワイド100+複100 払戻300+200 / 4R: 300 払戻1800
-    assert rep["cost"] == 300 + 200 + 200 + 300
+    # 5R: 単勝は的中済みなので買わないが、ワイド・複勝は買う
+    assert [t["bet_type"] for t in rows[4]["tickets"]] == ["ワイド", "複勝"] and "的中済み" in rows[4]["note"]
+    # 1R: 単100+ワイド100+複100=300 払戻150 / 2R: 200 / 3R: ワイド100+複100 払戻300+200 / 4R: 300 払戻1800 / 5R: 200
+    assert rep["cost"] == 300 + 200 + 200 + 300 + 200
     assert rep["payout"] == 150 + 0 + 500 + 1800
 
 
@@ -212,3 +213,21 @@ def test_result_without_rank_table_uses_tansho_payout():
     html = RESULT_HTML.split('<table class="Payout_Detail_Table">')[1]
     r = parse_result('<table class="Payout_Detail_Table">' + html)
     assert r.ranks == {} and r.settled and r.winner == 8
+
+
+def test_sim_weekday_mixes_roll_and_bets():
+    """平日：◎だけは転がしのみ、◎★は転がしと◎★の買い方、★だけは複勝★。"""
+    races = [{"venue": "大井", "race_no": 1, "post_time": "15:00", "honmei": 1, "stars": [2]},
+             {"venue": "大井", "race_no": 2, "post_time": "16:00", "honmei": 3, "stars": []},
+             {"venue": "大井", "race_no": 3, "post_time": "17:00", "honmei": None, "stars": [4]}]
+    res = {("大井", 1): _res(1, {1: 3.0}, fuku={(1,): 150, (2,): 200}, wide={(1, 2): 500}),
+           ("大井", 2): _res(5, {3: 4.0, 5: 6.0}),
+           ("大井", 3): _res(4, {4: 2.0}, fuku={(4,): 130})}
+    rep = simulate("2026-11-02", races, res, S)  # 月曜
+    got = [(r["race_no"], r["kind"], r["cost"]) for r in rep["rows"]]
+    assert got == [(1, "転がし", 500), (1, "◎★", 300), (2, "転がし", 700), (3, "◎★", 100)]
+    # 1Rの転がし：500円→750円、2Rで700円を賭けて外れ
+    assert rep["rows"][0]["payout"] == 750 and rep["rows"][2]["payout"] == 0
+    # 1Rの◎★：単勝300+ワイド500+複勝200
+    assert rep["rows"][1]["payout"] == 300 + 500 + 200
+    assert rep["own"] == 500 + 300 + 100  # 転がしの元手500円＋◎★の買い方400円

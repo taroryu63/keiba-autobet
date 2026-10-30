@@ -90,27 +90,29 @@ function renderDay() {
   const pct = Math.min(100, (d.used / Math.max(1, d.limit)) * 100);
   let html = `<div class="row" style="justify-content:space-between"><h2 style="margin:0">${d.holiday ? "土日祝" : "平日"}のルール</h2>`
     + `<span class="muted">${esc(d.date)}</span></div>`;
-  if (d.holiday) {
-    const t = d.tansho;
-    const ended = t.status !== "active";
-    html += `<p class="muted">単勝◎は外れるたびに${yen(S.settings.tansho_base)}ずつ増額し、的中したらその日は終了します。ワイド◎-★と複勝★は各${yen(S.settings.wide_amount)}です。</p>
-      <div class="stats">
-        <div class="stat"><b>${ended ? "終了" : yen(t.next)}</b><span>${ended ? "単勝的中で終了" : "次の単勝"}</span></div>
-        <div class="stat"><b>${t.losses}回</b><span>単勝の連続外れ</span></div>
-        <div class="stat"><b>${yen(d.used)}</b><span>使用 / 上限 ${yen(d.limit)}</span></div>
-      </div>
-      <div class="bar-meter ${d.used > d.limit ? "over" : ""}"><i style="width:${pct}%"></i></div>`;
-    if (t.message) html += `<p class="msg">${esc(t.message)}</p>`;
-  } else {
+  const t = d.tansho;
+  const tEnded = t.status !== "active";
+  html += `<h2 style="margin-top:12px">◎★の買い方${d.holiday ? "" : "（★のあるレース）"}</h2>
+    <p class="muted">単勝◎は外れるたびに${yen(S.settings.tansho_base)}ずつ増額し、一度的中したらその日は単勝だけ買いません。ワイド◎-★と複勝★は各${yen(S.settings.wide_amount)}です。</p>
+    <div class="stats">
+      <div class="stat"><b>${tEnded ? "終了" : yen(t.next)}</b><span>${tEnded ? "単勝は的中済み" : "次の単勝"}</span></div>
+      <div class="stat"><b>${t.losses}回</b><span>単勝の連続外れ</span></div>
+      <div class="stat"><b>${yen(d.used)}</b><span>使用 / 上限 ${yen(d.limit)}</span></div>
+    </div>
+    <div class="bar-meter ${d.used > d.limit ? "over" : ""}"><i style="width:${pct}%"></i></div>`;
+  if (t.message) html += `<p class="msg">${esc(t.message)}</p>`;
+  if (!d.holiday) {
     const r = d.roll;
     const ended = r.status !== "active";
-    html += `<p class="muted">複勝◎を${yen(S.settings.roll_stake)}から転がし、${S.settings.roll_target}回連続で的中するか資金${yen(S.settings.weekday_limit)}を使い切ったら終了します。</p>
+    const rp = Math.min(100, (r.own_spent / Math.max(1, S.settings.weekday_limit)) * 100);
+    html += `<h2>複勝◎の転がし（◎のあるレース）</h2>
+      <p class="muted">複勝◎を${yen(S.settings.roll_stake)}から転がし、${S.settings.roll_target}回連続で的中するか資金${yen(S.settings.weekday_limit)}を使い切ったら終了します。</p>
       <div class="stats">
         <div class="stat"><b>${r.wins} / ${S.settings.roll_target}</b><span>連続的中</span></div>
         <div class="stat"><b>${ended ? "終了" : yen(r.next)}</b><span>${ended ? (r.status === "won" ? "目標達成" : "資金切れ") : "次に賭ける額"}</span></div>
         <div class="stat"><b>${yen(r.own_spent)}</b><span>使った資金 / ${yen(S.settings.weekday_limit)}</span></div>
       </div>
-      <div class="bar-meter"><i style="width:${pct}%"></i></div>`;
+      <div class="bar-meter"><i style="width:${rp}%"></i></div>`;
     if (r.message) html += `<p class="msg">${esc(r.message)}</p>`;
   }
   $("#day-card").innerHTML = html;
@@ -241,11 +243,9 @@ function renderParse() {
       + p.rows.map((r) => `<tr><td>${esc(r.venue)}${r.race_no}R${r.post_time ? `<br><span class="muted">${esc(r.post_time)}</span>` : ""}</td>`
         + `<td class="${r.strategy ? "" : "muted"}">${esc(r.desc)}</td></tr>`).join("")
       + `</table></div>`;
-    if (p.holiday) {
-      html += `<p class="muted">ワイド・複勝の合計 ${yen(p.fixed_cost)} ＋ 単勝${p.tansho_races}レース分（100円から増額）。発走時刻は自動で取得します。</p>`;
-    } else {
-      html += `<p class="muted">◎のレースを順に転がしの候補にします。発走時刻は自動で取得します。</p>`;
-    }
+    html += `<p class="muted">ワイド・複勝の合計 ${yen(p.fixed_cost)} ＋ 単勝${p.tansho_races}レース分（100円から増額）`
+      + (p.holiday ? "" : "。◎のあるレースは、複勝◎の転がしの候補にもします")
+      + `。発走時刻は自動で取得します。</p>`;
     html += `<button id="btn-bulk" class="primary" ${p.errors.length ? "disabled" : ""}>この内容で予約する</button>`;
   }
   $("#parse-out").innerHTML = html;
@@ -294,7 +294,7 @@ async function loadSims() {
     <div class="stat"><b>${yen(tot.cost)}</b><span>購入合計</span></div></div>`;
   $("#sims").innerHTML = sims.map((s) => {
     const r = s.report;
-    const rows = r.rows.map((x) => `<tr><td>${esc(x.venue)}${x.race_no}R<br><span class="muted">${esc(x.post_time)}</span></td>`
+    const rows = r.rows.map((x) => `<tr><td>${esc(x.venue)}${x.race_no}R<br><span class="muted">${esc(x.post_time)}${x.kind ? ` ${esc(x.kind)}` : ""}</span></td>`
       + `<td>${x.tickets.length ? esc(ticketText({ tickets: x.tickets, strategy: "manual", plan: {} })) : ""}`
       + `${x.note ? `<br><span class="muted">${esc(x.note)}</span>` : ""}</td>`
       + `<td class="n">${x.cost ? yen(x.cost) : "-"}<br>${x.payout ? `<span class="pos">${yen(x.payout)}</span>` : ""}</td></tr>`).join("");

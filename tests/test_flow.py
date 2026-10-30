@@ -89,17 +89,17 @@ def test_requires_login(tmp_path, monkeypatch):
 def test_holiday_flow(client):
     c = client
     c.put("/api/settings", json={"mode": "live"})
-    text = "東京\n1R ◎1 ★2.3\n2R ◎4\n3R ◎5 ★6\n4R ★7.8\n"
+    text = "東京\n1R ◎1 ★2.3\n2R ◎4\n3R ◎5 ★6\n4R ★7.8\n5R ◎9 ★1\n6R ◎2\n"
     preview = c.post("/api/parse", json={"race_date": "2026-11-01", "text": text}).json()
     assert preview["holiday"] and preview["errors"] == []
     assert preview["rows"][3]["desc"].startswith("複勝 7.8")
-    assert c.post("/api/bulk", json={"race_date": "2026-11-01", "text": text}).json()["created"] == 4
+    assert c.post("/api/bulk", json={"race_date": "2026-11-01", "text": text}).json()["created"] == 6
 
     # 発走時刻はnetkeibaの一覧から入る
-    for n, t in [(1, "10:00"), (2, "10:30"), (3, "11:00"), (4, "11:30")]:
+    for n, t in [(1, "10:00"), (2, "10:30"), (3, "11:00"), (4, "11:30"), (5, "12:00"), (6, "12:30")]:
         c.race_list[("東京", n)] = {"race_id": f"東京{n}", "post_time": t}
     tick(c, "08:01")
-    assert [o["status"] for o in orders(c).values()] == ["queued"] * 4, orders(c)
+    assert [o["status"] for o in orders(c).values()] == ["queued"] * 6, orders(c)
 
     tick(c, "09:55")  # 1R 投票
     assert FakeBot.votes[-1][3][0] == {"bet_type": "単勝", "combo": [1], "amount": 100}
@@ -117,12 +117,17 @@ def test_holiday_flow(client):
     tick(c, "10:55")  # 3R: 1回外れたので200円
     assert FakeBot.votes[-1][3][0]["amount"] == 200
     settle(c, "東京", 3, winner=5, tan=380)
-    tick(c, "11:10")  # 単勝的中 → 4Rは取り消し
-    st = orders(c)
-    assert st[("東京", 3)]["payout"] == 760
-    assert st[("東京", 4)]["status"] == "cancelled"
-    tick(c, "11:25")
-    assert len(FakeBot.votes) == 2
+    tick(c, "11:10")  # 単勝的中 → この日はもう単勝は買わない（ほかは続ける）
+    assert orders(c)[("東京", 3)]["payout"] == 760
+
+    tick(c, "11:25")  # 4R: ★だけなので複勝★はそのまま買う
+    assert FakeBot.votes[-1][3] == [{"bet_type": "複勝", "combo": [7], "amount": 100},
+                                    {"bet_type": "複勝", "combo": [8], "amount": 100}]
+    tick(c, "11:55")  # 5R: 単勝は買わず、ワイドと複勝だけ
+    assert [t["bet_type"] for t in FakeBot.votes[-1][3]] == ["ワイド", "複勝"]
+    tick(c, "12:25")  # 6R: ◎だけ（単勝だけ）なので買う馬券がない
+    assert orders(c)[("東京", 6)]["status"] == "cancelled"
+    assert len(FakeBot.votes) == 4
 
 
 def test_holiday_limit_holds(client):
@@ -139,32 +144,47 @@ def test_holiday_limit_holds(client):
     assert orders(c)[("東京", 2)]["status"] == "done"
 
 
-def test_weekday_roll(client):
+def by_strategy(c, d):
+    return {(o["venue"], o["race_no"], o["strategy"]): o
+            for o in c.get("/api/state", params={"d": d}).json()["orders"]}
+
+
+def test_weekday_roll_and_bets(client):
+    """平日：◎は転がし、◎★のレースは転がしと◎★の買い方の両方、★だけは複勝★。"""
     c = client
     c.clock["now"] = datetime(2026, 11, 2, 8, 0, tzinfo=JST)  # 月曜
     c.put("/api/settings", json={"mode": "live"})
-    r = c.post("/api/bulk", json={"race_date": "2026-11-02",
-                                  "text": "大井\n1R 15:00 ◎1 ★2.3\n2R 15:05 ◎4\n3R 16:00 ◎5\n4R 16:30 ★6"}).json()
-    assert r["created"] == 3 and "平日は◎のみ" in r["skipped"][0]
-    tick(c, "14:55")
-    assert FakeBot.votes[-1][3] == [{"bet_type": "複勝", "combo": [1], "amount": 500}]
-    tick(c, "15:00")  # 2Rは1Rの結果待ちで見送り
-    assert orders(c)[("大井", 2)]["status"] == "skipped"
-    for n in (1, 2, 3):
+    text = "大井\n1R 15:00 ◎1 ★2.3\n2R 15:05 ◎4\n3R 16:00 ◎5\n4R 16:30 ★6"
+    preview = c.post("/api/parse", json={"race_date": "2026-11-02", "text": text}).json()
+    assert preview["rows"][0]["strategy"] == "roll+holiday"
+    r = c.post("/api/bulk", json={"race_date": "2026-11-02", "text": text}).json()
+    assert r["created"] == 5 and r["skipped"] == []
+    tick(c, "14:55")  # 1R: 転がし（複勝◎500円）と◎★の買い方（単勝◎100円・ワイド・複勝★）
+    kinds = sorted((v[3][0]["bet_type"], len(v[3])) for v in FakeBot.votes)
+    assert kinds == [("単勝", 5), ("複勝", 1)]
+    assert [{"bet_type": "複勝", "combo": [1], "amount": 500}] in [v[3] for v in FakeBot.votes]
+    tick(c, "15:00")  # 2Rの転がしは、1Rの結果待ちで見送り
+    assert by_strategy(c, "2026-11-02")[("大井", 2, "roll")]["status"] == "skipped"
+    for n in (1, 2, 3, 4):
         c.race_list[("大井", n)] = {"race_id": f"大井{n}", "post_time": ""}
     settle(c, "大井", 1, winner=1, fuku={(1,): 180})
     tick(c, "15:10")
     tick(c, "15:55")
     assert FakeBot.votes[-1][3] == [{"bet_type": "複勝", "combo": [5], "amount": 900}]
+    tick(c, "16:25")  # 4R: ★だけ → 複勝★
+    assert FakeBot.votes[-1][3] == [{"bet_type": "複勝", "combo": [6], "amount": 100}]
     day = c.get("/api/state", params={"d": "2026-11-02"}).json()["day"]
     assert day["roll"]["wins"] == 1 and day["roll"]["own_spent"] == 500
+    # 1Rの単勝◎1番が的中したので、平日も単勝はこの日終了
+    assert day["tansho"]["status"] == "won"
+    # ◎★の買い方の使用額（転がしの元手は含まない）: 1R 500円 + 4R 100円
+    assert day["used"] == 600 and day["limit"] == 10000
 
 
-def test_weekday_rejects_other_bets(client):
+def test_holiday_rejects_roll(client):
     c = client
-    c.clock["now"] = datetime(2026, 11, 2, 8, 0, tzinfo=JST)
-    r = c.post("/api/orders", json={"strategy": "holiday", "org": "nar", "race_date": "2026-11-02",
-                                    "venue": "大井", "race_no": 1, "post_time": "15:00", "honmei": 1})
+    r = c.post("/api/orders", json={"strategy": "roll", "org": "jra", "race_date": "2026-11-01",
+                                    "venue": "東京", "race_no": 1, "post_time": "15:00", "horse": 1})
     assert r.status_code == 400
 
 

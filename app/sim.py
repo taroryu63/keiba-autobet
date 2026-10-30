@@ -27,26 +27,38 @@ def simulate(race_date: str, races: list[dict], results: dict, settings: dict) -
     results: {(venue, race_no): RaceResult}"""
     hol = strategy.is_holiday(date.fromisoformat(race_date))
     races = sorted((r for r in races if r.get("post_time")), key=lambda r: (r["post_time"], r["venue"]))
-    rows = simulate_holiday(races, results, settings) if hol else simulate_roll(races, results, settings)
+    limit = strategy.day_limit(date.fromisoformat(race_date), settings)
+    # ◎★の買い方：土日祝は全レース、平日は★のあるレース（◎だけのレースは転がしのみ）
+    bet_races = races if hol else [r for r in races if r.get("stars")]
+    rows = simulate_holiday(bet_races, results, settings, limit)
+    for x in rows:
+        x["kind"] = "◎★"
+    bet_cost = sum(x["cost"] for x in rows)
+    roll_own = 0
+    if not hol:
+        roll = simulate_roll(races, results, settings)
+        for x in roll:
+            x["kind"] = "転がし"
+        roll_own = sum(x.get("own", 0) for x in roll)
+        rows = sorted(rows + roll, key=lambda x: (x["post_time"], x["venue"], x["kind"] != "転がし"))
     cost = sum(r["cost"] for r in rows)
     payout = sum(r["payout"] for r in rows)
-    limit = strategy.day_limit(date.fromisoformat(race_date), settings)
-    own = cost if hol else sum(r.get("own", 0) for r in rows)
+    own = bet_cost + roll_own
     return {
         "race_date": race_date, "holiday": hol, "rows": rows,
         "cost": cost, "payout": payout,
-        # 平日の転がしは払戻金を賭け直すので、収支は「使った元手」と「最後に手元に残った額」で見る
+        # 転がしは払戻金を賭け直すので、使った元手は「◎★の買い方の合計＋転がしの元手」
         "own": own,
         "profit": payout - cost,
         "roi": round(payout / cost * 100, 1) if cost else None,
-        "limit": limit, "over_limit": own > limit,
+        "limit": limit, "over_limit": bet_cost > limit,
     }
 
 
-def simulate_holiday(races: list[dict], results: dict, s: dict) -> list[dict]:
+def simulate_holiday(races: list[dict], results: dict, s: dict, limit: int) -> list[dict]:
     rows: list[dict] = []
     chain = {"losses": 0}
-    ended_at: datetime | None = None
+    ended_at: datetime | None = None  # 単勝が当たった時刻（以後は単勝だけ買わない）
     pending: list[tuple[datetime, bool]] = []  # (結果が分かる時刻, 単勝が当たったか)
     spent = 0
     for r in races:
@@ -61,15 +73,14 @@ def simulate_holiday(races: list[dict], results: dict, s: dict) -> list[dict]:
                "honmei": r.get("honmei"), "stars": r.get("stars", []), "cost": 0, "payout": 0,
                "tickets": [], "note": ""}
         rows.append(row)
-        if ended_at is not None:
-            row["note"] = "単勝的中で終了済み"
-            continue
         res: RaceResult | None = results.get((r["venue"], r["race_no"]))
         if not res or not res.settled:
             row["note"] = "結果を取得できませんでした（計算に含めません）"
             continue
         amt = 0
-        if r.get("honmei"):
+        if r.get("honmei") and ended_at is not None:
+            row["note"] = "単勝は的中済みのため買わない"
+        elif r.get("honmei"):
             amt = strategy.tansho_amount(chain, len(pending), s) or 0
             if amt == 0:
                 row["note"] = "前の単勝の結果待ちで単勝見送り"
@@ -83,7 +94,7 @@ def simulate_holiday(races: list[dict], results: dict, s: dict) -> list[dict]:
         row["payout"] = res.payout(row["tickets"])
         spent += row["cost"]
         row["spent_so_far"] = spent
-        if spent > s["holiday_limit"]:
+        if spent > limit:
             row["note"] = (row["note"] + "・" if row["note"] else "") + "上限超え（本番なら保留）"
         if amt:
             hit = res.winner == r["honmei"]

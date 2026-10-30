@@ -166,25 +166,26 @@ class Runner:
             return self._prepare_roll(o, s)
         if o["strategy"] == "holiday":
             chain = self.db.chain_for(o["race_date"], "tansho", create=True)
-            if chain["status"] != "active":
-                self.db.set_status(o["id"], "cancelled", "単勝が的中したので本日は終了しました")
-                return None
+            tansho_on = chain["status"] == "active"  # 単勝が一度当たったら、その日は単勝だけ買わない
             unresolved = sum(
                 1 for x in self.db.chain_orders(chain["id"])
                 if x["id"] != o["id"] and x["plan"].get("tansho") and x["payout"] is None
                 and x["status"] in ("pending", "voting", "done", "unknown")
             )
-            amt = (strategy.tansho_amount(chain, unresolved, s) or 0) if o["plan"].get("honmei") else 0
+            amt = (strategy.tansho_amount(chain, unresolved, s) or 0) if o["plan"].get("honmei") and tansho_on else 0
             tickets = strategy.holiday_tickets(o["plan"], s, amt)
+            if not tickets:
+                self.db.set_status(o["id"], "cancelled", "単勝は本日終了しているため、買う馬券がありません")
+                return None
             plan = {**o["plan"], "tansho": amt}
             self.db.update_order(o["id"], chain_id=chain["id"], plan=plan,
                                  tickets=[_t(t) for t in tickets], points=len(tickets),
                                  total=sum(t.amount for t in tickets),
                                  unit_amount=amt or s["wide_amount"])
             o = self.db.get(o["id"])
-        # 上限の確認（転がし以外）
+        # 上限の確認（転がし以外。転がしの資金は別に数える）
         limit = strategy.day_limit(d, s)
-        used = self.db.day_total(o["race_date"]) - (o["total"] if o["status"] == "pending" else 0)
+        used = self.db.day_total(o["race_date"], include_roll=False) - (o["total"] if o["status"] == "pending" else 0)
         if used + o["total"] > limit and not o["plan"].get("allow_over"):
             self.db.set_status(o["id"], "held", f"本日の上限 {limit:,}円を超えます（使用済み {used:,}円＋今回 {o['total']:,}円）")
             notify.send("上限超え・保留中", f"{race_label(o)} {o['total']:,}円を買うと本日の上限 {limit:,}円を超えます。"
@@ -331,9 +332,9 @@ class Runner:
             chain = self.db.chain_for(o["race_date"], "tansho")
             if hit:
                 self.db.update_chain(chain["id"], status="won",
-                                     message=f"{race_label(o)} 単勝◎{o['plan']['honmei']}番 的中で本日終了")
-                n = self.cancel_rest(o["race_date"], "単勝が的中したので本日は終了しました")
-                msg = f"{race_label(o)} 単勝的中！（払戻 {payout:,}円）本日は終了、残り{n}件を取り消しました"
+                                     message=f"{race_label(o)} 単勝◎{o['plan']['honmei']}番 的中。本日の単勝は終了")
+                msg = (f"{race_label(o)} 単勝的中！（払戻 {payout:,}円）"
+                       "本日はこのあと単勝は買いません（ワイド・複勝・転がしは続けます）")
             elif hit is False:
                 self.db.update_chain(chain["id"], losses=chain["losses"] + 1)
                 nxt = self.db.settings()["tansho_base"] * (chain["losses"] + 2)

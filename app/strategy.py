@@ -1,12 +1,13 @@
 """資金のルール。
 
-平日: 複勝の転がしのみ。roll_stake（500円）から始め、的中したら払戻金を全額次へ。
+◎★の買い方（土日祝・平日とも）: 1レースごとに ◎ と ★ を受け取り、
+      単勝◎（tansho_base円から、外れるたびにtansho_base円ずつ増やす）
+      ワイド◎-★ 各wide_amount円、複勝★ 各fukusho_amount円 を買う。◎が無いレースは複勝★だけ。
+      単勝が一度当たったら、その日はそれ以降、単勝だけ買わない（ワイド・複勝は続ける）。
+      1日の上限（土日祝 holiday_limit / 平日 weekday_bet_limit）を超える買い目は保留にして、スマホで判断してもらう。
+平日の転がし: ◎のあるレースで、複勝◎の転がしもする（◎★のレースは、◎★の買い方と両方）。
+      roll_stake（500円）から始め、的中したら払戻金を全額次へ。
       roll_target（4回）連続で的中するか、weekday_limit（3000円）を使い切ったら終了。
-休日: 1レースごとに ◎ と ★ を受け取り、
-      ◎が無いレースは複勝★だけ。
-      単勝◎（tansho_base円から、外れるたびにtansho_base円ずつ増やす。単勝が当たったらその日は終了）
-      ワイド◎-★ 各wide_amount円、複勝★ 各fukusho_amount円 を買う。
-      holiday_limit（10000円）を超える買い目は保留にして、スマホで判断してもらう。
 """
 from __future__ import annotations
 
@@ -25,7 +26,8 @@ def is_holiday(d: date) -> bool:
 
 
 def day_limit(d: date, settings: dict) -> int:
-    return settings["holiday_limit"] if is_holiday(d) else settings["weekday_limit"]
+    """◎★の買い方の1日の上限（転がしの資金は別）。"""
+    return settings["holiday_limit"] if is_holiday(d) else settings["weekday_bet_limit"]
 
 
 def floor100(yen: int) -> int:
