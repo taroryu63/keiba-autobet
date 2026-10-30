@@ -87,20 +87,16 @@ def login(body: LoginIn, request: Request, response: Response):
 # --- 状態 ---
 def day_info(d: str) -> dict:
     s = db().settings()
-    dd = date.fromisoformat(d)
-    hol = strategy.is_holiday(dd)
     chains = {c["kind"]: c for c in db().chains_on(d)}
-    info = {"date": d, "holiday": hol, "limit": strategy.day_limit(dd, s),
-            "used": db().day_total(d, include_roll=False)}
     c = chains.get("tansho") or {"status": "active", "losses": 0, "message": ""}
-    info["tansho"] = {"status": c["status"], "losses": c["losses"], "message": c["message"],
-                      "next": s["tansho_base"] * (c["losses"] + 1)}
-    if not hol:
-        c = chains.get("roll") or {"status": "active", "wins": 0, "stake": None, "own_spent": 0,
-                                   "attempts": 0, "carry": 0, "message": ""}
-        info["roll"] = {k: c[k] for k in ("status", "wins", "stake", "own_spent", "attempts", "carry", "message")}
-        info["roll"]["next"] = c["stake"] or s["roll_stake"]
-    return info
+    tansho = {"status": c["status"], "losses": c["losses"], "message": c["message"],
+              "next": s["tansho_base"] * (c["losses"] + 1)}
+    c = chains.get("roll") or {"status": "active", "wins": 0, "stake": None, "own_spent": 0,
+                               "attempts": 0, "carry": 0, "message": ""}
+    roll = {k: c[k] for k in ("status", "wins", "stake", "own_spent", "attempts", "carry", "message")}
+    roll["next"] = c["stake"] or s["roll_stake"]
+    return {"date": d, "limit": s["bet_limit"], "tansho": tansho, "roll": roll,
+            "used": {"jra": db().bets_used(d, "jra"), "nar": db().bets_used(d, "nar")}}
 
 
 @app.get("/api/state", dependencies=[Depends(auth)])
@@ -155,9 +151,8 @@ def build_order(body: OrderIn) -> dict:
         raise HTTPException(400, "日付が不正です")
     if body.venue not in VENUES[body.org]:
         raise HTTPException(400, "開催場が不正です")
-    hol = strategy.is_holiday(d)
-    if hol and body.strategy == "roll":
-        raise HTTPException(400, "転がしは平日のみです")
+    if body.strategy == "roll" and body.org != "nar":
+        raise HTTPException(400, "複勝の転がしは地方競馬だけです")
 
     o = {"org": body.org, "race_date": body.race_date, "venue": body.venue, "race_no": body.race_no,
          "post_time": body.post_time, "strategy": body.strategy, "method": body.method,
@@ -205,56 +200,59 @@ class TextIn(BaseModel):
     text: str = Field(max_length=20000)
 
 
-def _plans_for(r, hol: bool) -> list[tuple[str, str]]:
-    """読み取ったレースから、[(戦略, 何を買うかの説明)] を作る。空なら買わない。
-    平日の◎のあるレースは転がしもする（◎★のレースは、◎★の買い方と両方）。"""
+def _plans_for(r) -> list[tuple[str, str]]:
+    """読み取ったレースから、[(買い方, 何を買うかの説明)] を作る。空なら買わない。"""
     s = db().settings()
-    stars = r.stars
+    st = ".".join(map(str, r.stars))
     out = []
-    if not hol and r.honmei is not None:
-        out.append(("roll", f"複勝転がし ◎{r.honmei}"))
-    if r.honmei is None:
-        out.append(("holiday", f"複勝 {'.'.join(map(str, stars))}（各{s['fukusho_amount']}円）"))
-    elif stars or hol:
-        parts = [f"単勝◎{r.honmei}"]
-        if stars:
-            parts.append(f"ワイド{r.honmei}-{'.'.join(map(str, stars))}（各{s['wide_amount']}円）")
-            parts.append(f"複勝{'.'.join(map(str, stars))}（各{s['fukusho_amount']}円）")
+    for kind in strategy.plans_for(r.org, r.honmei, r.stars):
+        if kind == "roll":
+            out.append(("roll", f"複勝転がし ◎{r.honmei}"))
+            continue
+        parts = []
+        if r.org == "jra" and r.honmei is not None:
+            parts.append(f"単勝◎{r.honmei}")
+        if r.honmei is not None and r.stars:
+            parts.append(f"ワイド{r.honmei}→{st}（各{s['wide_amount']}円）")
+            if len(r.stars) >= 2:
+                n = len(r.stars) * (len(r.stars) - 1) // 2
+                parts.append(f"3連複{r.honmei}→{st}（{n}点・各{s['sanrenpuku_amount']}円）")
+        if r.stars:
+            parts.append(f"複勝{st}（各{s['fukusho_amount']}円）")
         out.append(("holiday", " / ".join(parts)))
     return out
+
+
+def _bets_cost(r) -> int:
+    plan = {"honmei": r.honmei, "stars": r.stars}
+    return strategy.bets_cost(strategy.bet_tickets(plan, db().settings(), 0)) if r.stars else 0
 
 
 @app.post("/api/parse", dependencies=[Depends(auth)])
 def parse_text(body: TextIn):
     """予想テキストを読み取って、何を買うかの確認用の一覧を返す（まだ登録しない）。"""
-    try:
-        hol = strategy.is_holiday(date.fromisoformat(body.race_date))
-    except ValueError:
-        raise HTTPException(400, "日付が不正です")
     pr = parse(body.text)
-    s = db().settings()
     rows = []
-    fixed = 0
+    cost = {"jra": 0, "nar": 0}
     tansho = 0
     for r in pr.races:
-        plans = _plans_for(r, hol)
-        cost = 0
-        if any(st == "holiday" for st, _ in plans):
-            cost = len(r.stars) * s["fukusho_amount"] + (len(r.stars) * s["wide_amount"] if r.honmei else 0)
-            tansho += 1 if r.honmei else 0
-        fixed += cost
+        plans = _plans_for(r)
+        if any(k == "holiday" for k, _ in plans):
+            cost[r.org] += _bets_cost(r)
+        tansho += 1 if r.org == "jra" and r.honmei is not None else 0
         rows.append({"org": r.org, "venue": r.venue, "race_no": r.race_no, "post_time": r.post_time,
                      "honmei": r.honmei, "stars": r.stars,
-                     "strategy": "+".join(st for st, _ in plans) or None,
-                     "desc": " ＋ ".join(d for _, d in plans) or "買いません", "fixed_cost": cost})
-    return {"holiday": hol, "rows": rows, "errors": pr.errors, "fixed_cost": fixed, "tansho_races": tansho}
+                     "strategy": "+".join(k for k, _ in plans) or None,
+                     "desc": " ＋ ".join(d for _, d in plans) or "買いません"})
+    return {"rows": rows, "errors": pr.errors, "bets_cost": cost, "tansho_races": tansho,
+            "limit": db().settings()["bet_limit"]}
 
 
 @app.post("/api/bulk", dependencies=[Depends(auth)])
 def bulk(body: TextIn):
     """予想テキストをまとめて予約する。登録できなかったレースは理由を返す。"""
     try:
-        hol = strategy.is_holiday(date.fromisoformat(body.race_date))
+        date.fromisoformat(body.race_date)
     except ValueError:
         raise HTTPException(400, "日付が不正です")
     pr = parse(body.text)
@@ -263,7 +261,7 @@ def bulk(body: TextIn):
     created, skipped = [], []
     for r in pr.races:
         label = f"{r.venue}{r.race_no}R"
-        plans = _plans_for(r, hol)
+        plans = _plans_for(r)
         if not plans:
             skipped.append(f"{label}: 買う馬券がありません")
         for strat, _ in plans:
@@ -320,7 +318,7 @@ def _run_sim(race_date: str, text: str) -> dict:
                 res_map[(r.venue, r.race_no)] = results.race_result(r.org, info["race_id"])
             except Exception as e:
                 notes.append(f"{r.venue}{r.race_no}R の結果を取得できません: {e}")
-        races.append({"venue": r.venue, "race_no": r.race_no, "post_time": post_time,
+        races.append({"org": r.org, "venue": r.venue, "race_no": r.race_no, "post_time": post_time,
                       "honmei": r.honmei, "stars": r.stars})
     report = sim.simulate(race_date, races, res_map, db().settings())
     report["notes"] = notes
@@ -436,16 +434,17 @@ def resolve(oid: int, body: ResolveIn):
 class SettingsIn(BaseModel):
     mode: str | None = Field(default=None, pattern="^(off|rehearsal|live)$")
     vote_offset_min: int | None = Field(default=None, ge=3, le=60)
-    weekday_limit: int | None = Field(default=None, ge=0, le=1_000_000)
-    holiday_limit: int | None = Field(default=None, ge=0, le=1_000_000)
-    weekday_bet_limit: int | None = Field(default=None, ge=0, le=1_000_000)
+    roll_budget: int | None = Field(default=None, ge=0, le=1_000_000)
     roll_stake: int | None = Field(default=None, ge=100, le=100_000)
     roll_target: int | None = Field(default=None, ge=1, le=20)
     tansho_base: int | None = Field(default=None, ge=100, le=100_000)
+    tansho_max_losses: int | None = Field(default=None, ge=1, le=30)
     tansho_min_odds: float | None = Field(default=None, ge=1.0, le=100)
     odds_unknown: str | None = Field(default=None, pattern="^(skip|buy)$")
     pending_policy: str | None = Field(default=None, pattern="^(assume_loss|skip)$")
+    bet_limit: int | None = Field(default=None, ge=0, le=1_000_000)
     wide_amount: int | None = Field(default=None, ge=100, le=100_000)
+    sanrenpuku_amount: int | None = Field(default=None, ge=100, le=100_000)
     fukusho_amount: int | None = Field(default=None, ge=100, le=100_000)
     result_delay_min: int | None = Field(default=None, ge=3, le=60)
     paused: bool | None = None
@@ -456,7 +455,7 @@ def put_settings(body: SettingsIn):
     vals = body.model_dump(exclude_none=True)
     if vals.get("mode") == "live" and not config.allow_live:
         raise HTTPException(400, "本番投票はサーバーの .env で ALLOW_LIVE=1 にしたときだけ選べます")
-    for k in ("weekday_limit", "holiday_limit", "weekday_bet_limit", "roll_stake", "tansho_base", "wide_amount", "fukusho_amount"):
+    for k in ("roll_budget", "roll_stake", "tansho_base", "bet_limit", "wide_amount", "sanrenpuku_amount", "fukusho_amount"):
         if k in vals and vals[k] % 100:
             raise HTTPException(400, "金額は100円単位で指定してください")
     return db().save_settings(vals)

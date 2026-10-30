@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from app.bots.engine import SiteBot, wide_nagashi
+from app.bots.engine import SiteBot, make_nagashi, wide_nagashi
 from app.calibration import sample_order
 from app.config import config
 
@@ -117,11 +117,19 @@ def spat4(tmp_path, monkeypatch):
 def test_wide_nagashi_grouping():
     order = sample_order("大井", 11, 1)
     nag, rest = wide_nagashi(order["tickets"])
-    assert nag == {"axis": 1, "partners": [2, 3], "amount": 100}
+    assert nag == {"bet_type": "ワイド", "axis": 1, "partners": [2, 3], "amount": 100, "points": 2}
     assert [t["bet_type"] for t in rest] == ["単勝"] + ["複勝"] * 6
     # 金額が違うワイドはまとめない
     t = [{"bet_type": "ワイド", "combo": [1, 2], "amount": 100}, {"bet_type": "ワイド", "combo": [1, 3], "amount": 200}]
     assert wide_nagashi(t)[0] is None
+
+
+def test_sanrenpuku_nagashi_grouping():
+    t = [{"bet_type": "3連複", "combo": c, "amount": 100} for c in ([1, 2, 3], [1, 2, 4], [1, 3, 4])]
+    nag, rest = make_nagashi(t, "3連複")
+    assert nag == {"bet_type": "3連複", "axis": 1, "partners": [2, 3, 4], "amount": 100, "points": 3}
+    # 流しの全部の組み合わせでなければ、まとめない（1-3-4が欠けている）
+    assert make_nagashi(t[:2], "3連複")[0] is None
 
 
 def test_holiday_order_on_mark_cards(spat4):

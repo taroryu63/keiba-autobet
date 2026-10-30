@@ -9,7 +9,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-192.png">
-<link rel="stylesheet" href="style.css?v=4">
+<link rel="stylesheet" href="style.css?v=5">
 <title>競馬自動投票</title>
 </head>
 <body>
@@ -72,21 +72,15 @@
         <p class="muted" id="mode-help"></p>
         <label class="switch"><input type="checkbox" name="paused"><span>一時停止（投票しない）</span></label>
 
-        <h2>平日</h2>
-        <label>複勝◎の転がしの資金（円）<input name="weekday_limit" type="number" step="100" min="0"></label>
+        <h2>地方競馬：複勝◎の転がし</h2>
+        <label>転がしの資金（円）<input name="roll_budget" type="number" step="100" min="0"></label>
         <label>転がしの1回目の金額（円）<input name="roll_stake" type="number" step="100" min="100"></label>
-        <label>転がしは何回連続で的中したら終了<input name="roll_target" type="number" min="1" max="20"></label>
+        <label>何回連続で的中したら終了<input name="roll_target" type="number" min="1" max="20"></label>
 
-        <label>◎★の買い方の1日の上限（円）<input name="weekday_bet_limit" type="number" step="100" min="0"></label>
-
-        <h2>土日祝</h2>
-        <label>◎★の買い方の1日の上限（円）<input name="holiday_limit" type="number" step="100" min="0"></label>
-
-        <h2>◎★の買い方（平日・土日祝共通）</h2>
+        <h2>中央競馬：単勝◎</h2>
         <label>単勝の最初の金額・増やす額（円）<input name="tansho_base" type="number" step="100" min="100"></label>
+        <label>何回連続で外れたら単勝を終了<input name="tansho_max_losses" type="number" min="1" max="30"></label>
         <label>この倍率以下の単勝は見送り<input name="tansho_min_odds" type="number" step="0.1" min="1"></label>
-        <label>ワイド1点（円）<input name="wide_amount" type="number" step="100" min="100"></label>
-        <label>複勝1点（円）<input name="fukusho_amount" type="number" step="100" min="100"></label>
         <label>前の単勝の結果が未確定のとき
           <select name="pending_policy">
             <option value="assume_loss">外れとみなして増額して買う</option>
@@ -99,6 +93,12 @@
             <option value="buy">買う</option>
           </select>
         </label>
+
+        <h2>共通：ワイド・3連複の流し、複勝★</h2>
+        <label>1日の予算（円、地方と中央で別々）<input name="bet_limit" type="number" step="100" min="0"></label>
+        <label>ワイド1点（円）<input name="wide_amount" type="number" step="100" min="100"></label>
+        <label>3連複1点（円）<input name="sanrenpuku_amount" type="number" step="100" min="100"></label>
+        <label>複勝1点（円）<input name="fukusho_amount" type="number" step="100" min="100"></label>
 
         <h2>タイミング</h2>
         <label>発走の何分前に投票<input name="vote_offset_min" type="number" min="3" max="60"></label>
@@ -138,6 +138,6 @@
 
 <dialog id="dlg"><form method="dialog" id="dlg-form"></form></dialog>
 <div id="toast" role="status"></div>
-<script src="app.js?v=4"></script>
+<script src="app.js?v=5"></script>
 </body>
 </html>

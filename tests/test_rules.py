@@ -52,24 +52,39 @@ def test_parse_weekday_and_errors():
     assert "◎は1頭" in r.errors[0]
 
 
-def test_holiday_tickets():
-    ts = strategy.holiday_tickets({"honmei": 4, "stars": [5, 7, 9]}, S, 300)
+def test_plans_by_site():
+    """地方：◎は転がし、★があれば流し・複勝。中央：◎か★があれば単勝・流し・複勝（転がしはしない）。"""
+    assert strategy.plans_for("nar", 1, [2, 3]) == ["roll", "holiday"]
+    assert strategy.plans_for("nar", 1, []) == ["roll"]
+    assert strategy.plans_for("nar", None, [2]) == ["holiday"]
+    assert strategy.plans_for("jra", 1, [2, 3]) == ["holiday"]
+    assert strategy.plans_for("jra", 1, []) == ["holiday"]
+    assert strategy.plans_for("jra", None, [2]) == ["holiday"]
+
+
+def test_bet_tickets():
+    ts = strategy.bet_tickets({"honmei": 4, "stars": [5, 7, 9]}, S, 300)
     assert [(t.bet_type, t.combo, t.amount) for t in ts] == [
         ("単勝", (4,), 300),
         ("ワイド", (4, 5), 100), ("ワイド", (4, 7), 100), ("ワイド", (4, 9), 100),
+        ("3連複", (4, 5, 7), 100), ("3連複", (4, 5, 9), 100), ("3連複", (4, 7, 9), 100),
         ("複勝", (5,), 100), ("複勝", (7,), 100), ("複勝", (9,), 100)]
-    only_stars = strategy.holiday_tickets({"honmei": None, "stars": [3, 7]}, S, 0)
+    assert strategy.bets_cost(ts) == 900  # 単勝は予算7,000円に数えない
+    # ★1頭なら3連複はなし、◎なしなら複勝★だけ
+    assert [t.bet_type for t in strategy.bet_tickets({"honmei": 4, "stars": [5]}, S, 0)] == ["ワイド", "複勝"]
+    only_stars = strategy.bet_tickets({"honmei": None, "stars": [3, 7]}, S, 0)
     assert [(t.bet_type, t.combo) for t in only_stars] == [("複勝", (3,)), ("複勝", (7,))]
 
 
 def test_tansho_ladder():
-    # 100, 200, ... 1000, 1100（以後100円ずつ）
-    amounts = [strategy.tansho_amount({"losses": n}, 0, S) for n in range(11)]
-    assert amounts == [100 * (n + 1) for n in range(11)]
-    assert sum(amounts[:10]) == 5500
+    # 100, 200, ... 700（7回で合計2,800円）。7回外れたら単勝は終わり
+    amounts = [strategy.tansho_amount({"losses": n}, 0, S) for n in range(8)]
+    assert amounts[:7] == [100 * (n + 1) for n in range(7)] and sum(amounts[:7]) == 2800
+    assert amounts[7] is None
     # 結果待ち1件は外れ扱いで増額、skip設定なら見送り
     assert strategy.tansho_amount({"losses": 2}, 1, S) == 400
     assert strategy.tansho_amount({"losses": 2}, 1, {**S, "pending_policy": "skip"}) is None
+    assert strategy.tansho_amount({"losses": 6}, 1, S) is None  # 結果待ちを含めて7回分に届いている
 
 
 def test_roll_rules():
@@ -96,13 +111,13 @@ def _res(winner, odds, fuku=None, wide=None, tan=None):
     return r
 
 
-def test_sim_holiday_stops_only_tansho_after_hit():
+def test_sim_jra_stops_only_tansho_after_hit():
     races = [
-        {"venue": "東京", "race_no": 1, "post_time": "10:00", "honmei": 1, "stars": [2]},
-        {"venue": "東京", "race_no": 2, "post_time": "10:30", "honmei": 3, "stars": []},
-        {"venue": "東京", "race_no": 3, "post_time": "11:00", "honmei": 5, "stars": [6]},  # 1.8倍で単勝見送り
-        {"venue": "東京", "race_no": 4, "post_time": "11:30", "honmei": 7, "stars": []},   # 的中
-        {"venue": "東京", "race_no": 5, "post_time": "12:00", "honmei": 9, "stars": [1]},  # 単勝は終了済み
+        {"org": "jra", "venue": "東京", "race_no": 1, "post_time": "10:00", "honmei": 1, "stars": [2]},
+        {"org": "jra", "venue": "東京", "race_no": 2, "post_time": "10:30", "honmei": 3, "stars": []},
+        {"org": "jra", "venue": "東京", "race_no": 3, "post_time": "11:00", "honmei": 5, "stars": [6]},  # 1.8倍で単勝見送り
+        {"org": "jra", "venue": "東京", "race_no": 4, "post_time": "11:30", "honmei": 7, "stars": []},   # 的中
+        {"org": "jra", "venue": "東京", "race_no": 5, "post_time": "12:00", "honmei": 9, "stars": [1]},  # 単勝は終了済み
     ]
     res = {
         ("東京", 1): _res(4, {1: 5.0, 4: 3.0}, fuku={(2,): 150}),
@@ -111,33 +126,41 @@ def test_sim_holiday_stops_only_tansho_after_hit():
         ("東京", 4): _res(7, {7: 6.0}),
         ("東京", 5): _res(9, {9: 3.0}),
     }
-    rep = simulate("2026-10-25", races, res, S)  # 日曜
+    rep = simulate("2026-10-25", races, res, S)
     rows = rep["rows"]
     assert [t["amount"] for t in rows[0]["tickets"] if t["bet_type"] == "単勝"] == [100]
     assert [t["amount"] for t in rows[1]["tickets"] if t["bet_type"] == "単勝"] == [200]
     assert not any(t["bet_type"] == "単勝" for t in rows[2]["tickets"]) and "1.8倍" in rows[2]["note"]
     assert [t["amount"] for t in rows[3]["tickets"] if t["bet_type"] == "単勝"] == [300]
-    # 5R: 単勝は的中済みなので買わないが、ワイド・複勝は買う
-    assert [t["bet_type"] for t in rows[4]["tickets"]] == ["ワイド", "複勝"] and "的中済み" in rows[4]["note"]
-    # 1R: 単100+ワイド100+複100=300 払戻150 / 2R: 200 / 3R: ワイド100+複100 払戻300+200 / 4R: 300 払戻1800 / 5R: 200
+    # 5R: 単勝は終了済みなので買わないが、ワイド・複勝は買う
+    assert [t["bet_type"] for t in rows[4]["tickets"]] == ["ワイド", "複勝"] and "終了済み" in rows[4]["note"]
     assert rep["cost"] == 300 + 200 + 200 + 300 + 200
     assert rep["payout"] == 150 + 0 + 500 + 1800
 
 
-def test_sim_holiday_overlapping_races_assume_loss():
+def test_sim_jra_tansho_ends_after_7_losses():
+    races = [{"org": "jra", "venue": "東京", "race_no": n, "post_time": f"{9 + n}:00", "honmei": 1, "stars": []}
+             for n in range(1, 10)]
+    res = {("東京", n): _res(2, {1: 5.0, 2: 3.0}) for n in range(1, 10)}
+    rep = simulate("2026-10-25", races, res, S)
+    assert [r["cost"] for r in rep["rows"]] == [100, 200, 300, 400, 500, 600, 700, 0, 0]
+    assert rep["cost"] == 2800
+
+
+def test_sim_jra_overlapping_races_assume_loss():
     # 10分おき：前のレースの結果（発走10分後）が次の投票（発走5分前）に間に合わない
-    races = [{"venue": v, "race_no": 1, "post_time": t, "honmei": 1, "stars": []}
+    races = [{"org": "jra", "venue": v, "race_no": 1, "post_time": t, "honmei": 1, "stars": []}
              for v, t in [("東京", "10:00"), ("京都", "10:10"), ("新潟", "10:20")]]
     res = {(v, 1): _res(2, {1: 5.0, 2: 3.0}) for v in ("東京", "京都", "新潟")}
     rep = simulate("2026-10-25", races, res, S)
     assert [r["tickets"][0]["amount"] for r in rep["rows"]] == [100, 200, 300]
 
 
-def test_sim_roll():
-    races = [{"venue": "大井", "race_no": n, "post_time": t, "honmei": 1, "stars": []}
+def test_sim_nar_roll():
+    races = [{"org": "nar", "venue": "大井", "race_no": n, "post_time": t, "honmei": 1, "stars": []}
              for n, t in [(1, "15:00"), (2, "15:05"), (3, "15:30"), (4, "16:00")]]
     res = {("大井", n): _res(1, {1: 2.0}, fuku={(1,): p}) for n, p in [(1, 150), (2, 150), (3, 0), (4, 130)]}
-    rep = simulate("2026-10-26", races, res, S)  # 月曜
+    rep = simulate("2026-10-31", races, res, S)  # 土曜でも地方は転がし
     rows = rep["rows"]
     assert rows[0]["cost"] == 500 and rows[0]["payout"] == 750
     assert "結果待ち" in rows[1]["note"]       # 15:05発走は15:00の結果（15:10）に間に合わない
@@ -215,19 +238,29 @@ def test_result_without_rank_table_uses_tansho_payout():
     assert r.ranks == {} and r.settled and r.winner == 8
 
 
-def test_sim_weekday_mixes_roll_and_bets():
-    """平日：◎だけは転がしのみ、◎★は転がしと◎★の買い方、★だけは複勝★。"""
-    races = [{"venue": "大井", "race_no": 1, "post_time": "15:00", "honmei": 1, "stars": [2]},
-             {"venue": "大井", "race_no": 2, "post_time": "16:00", "honmei": 3, "stars": []},
-             {"venue": "大井", "race_no": 3, "post_time": "17:00", "honmei": None, "stars": [4]}]
-    res = {("大井", 1): _res(1, {1: 3.0}, fuku={(1,): 150, (2,): 200}, wide={(1, 2): 500}),
+def test_sim_nar_mixes_roll_and_bets():
+    """地方：◎だけは転がしのみ、◎★は転がしと流し・複勝、★だけは複勝★。単勝は買わない。"""
+    races = [{"org": "nar", "venue": "大井", "race_no": 1, "post_time": "15:00", "honmei": 1, "stars": [2, 3]},
+             {"org": "nar", "venue": "大井", "race_no": 2, "post_time": "16:00", "honmei": 3, "stars": []},
+             {"org": "nar", "venue": "大井", "race_no": 3, "post_time": "17:00", "honmei": None, "stars": [4]}]
+    r1 = _res(1, {1: 3.0}, fuku={(1,): 150, (2,): 200}, wide={(1, 2): 500})
+    r1.pay["3連複"] = {(1, 2, 3): 1200}
+    res = {("大井", 1): r1,
            ("大井", 2): _res(5, {3: 4.0, 5: 6.0}),
            ("大井", 3): _res(4, {4: 2.0}, fuku={(4,): 130})}
-    rep = simulate("2026-11-02", races, res, S)  # 月曜
+    rep = simulate("2026-11-02", races, res, S)
     got = [(r["race_no"], r["kind"], r["cost"]) for r in rep["rows"]]
-    assert got == [(1, "転がし", 500), (1, "◎★", 300), (2, "転がし", 700), (3, "◎★", 100)]
-    # 1Rの転がし：500円→750円、2Rで700円を賭けて外れ
+    # 1R流し：ワイド2点＋3連複1点＋複勝2点＝500円
+    assert got == [(1, "転がし", 500), (1, "流し・複勝", 500), (2, "転がし", 700), (3, "流し・複勝", 100)]
+    assert not any(t["bet_type"] == "単勝" for r in rep["rows"] for t in r["tickets"])
     assert rep["rows"][0]["payout"] == 750 and rep["rows"][2]["payout"] == 0
-    # 1Rの◎★：単勝300+ワイド500+複勝200
-    assert rep["rows"][1]["payout"] == 300 + 500 + 200
-    assert rep["own"] == 500 + 300 + 100  # 転がしの元手500円＋◎★の買い方400円
+    assert rep["rows"][1]["payout"] == 500 + 1200 + 200  # ワイド1-2、3連複1-2-3、複勝2
+    assert rep["own"] == 500 + 500 + 100  # 転がしの元手500円＋流し・複勝600円
+
+
+def test_sim_budget_over_is_marked():
+    races = [{"org": "jra", "venue": "東京", "race_no": n, "post_time": f"{9 + n}:00", "honmei": None,
+              "stars": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]} for n in range(1, 9)]
+    res = {("東京", n): _res(1, {1: 3.0}) for n in range(1, 9)}
+    rep = simulate("2026-10-25", races, res, S)  # 1レース1,000円×8＝8,000円 > 7,000円
+    assert rep["over_limit"] and "予算超え" in rep["rows"][7]["note"]

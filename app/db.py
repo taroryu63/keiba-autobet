@@ -16,17 +16,21 @@ COUNTED = ("pending", "voting", "done", "unknown")
 DEFAULT_SETTINGS = {
     "mode": "off",           # off=ブラウザを使わない練習 / rehearsal=購入直前まで / live=本番
     "vote_offset_min": 5,    # 発走の何分前に投票するか
-    "weekday_limit": 3000,   # 平日の資金（円）。平日は複勝の転がしのみ
-    "holiday_limit": 10000,  # 土日祝の◎★の買い方の上限（円）
-    "weekday_bet_limit": 10000,  # 平日の◎★の買い方の上限（円）。転がしの資金とは別
+    # 地方：複勝◎の転がし
+    "roll_budget": 3000,     # 転がしの資金（円）。500円×6回外れで終わり
     "roll_stake": 500,       # 転がしの1回目の金額（円）
-    "tansho_base": 100,      # 休日の単勝の最初の金額（円）。外れるたびにこの額ずつ増やす
+    "roll_target": 4,        # 何回連続で的中したら終了するか
+    # 中央：単勝◎
+    "tansho_base": 100,      # 単勝の最初の金額（円）。外れるたびにこの額ずつ増やす
+    "tansho_max_losses": 7,  # 何回連続で外れたら、その日の単勝を終わりにするか（100〜700円、計2,800円）
     "tansho_min_odds": 2.1,  # この倍率以下の単勝は見送る
     "odds_unknown": "skip",  # オッズを読めなかったとき: skip=単勝を見送る / buy=買う
     "pending_policy": "assume_loss",  # 前の単勝の結果が未確定: assume_loss=外れ扱いで増額 / skip=見送る
-    "wide_amount": 100,      # ワイド◎-★の1点の金額
+    # 地方・中央共通：ワイド・3連複の流しと複勝★
+    "bet_limit": 7000,       # 1日の予算（円）。地方と中央で別々に数える
+    "wide_amount": 100,      # ワイド◎→★の1点の金額
+    "sanrenpuku_amount": 100,  # 3連複◎→★の1点の金額
     "fukusho_amount": 100,   # 複勝★の1点の金額
-    "roll_target": 4,        # 何回連続で的中したら終了するか
     "result_delay_min": 10,  # 発走から何分後に払戻を確認し始めるか
     "paused": False,         # 一時停止
 }
@@ -213,6 +217,16 @@ class DB:
                 "SELECT COALESCE(SUM(own_spent),0) FROM chains WHERE race_date=? AND kind='roll'", (race_date,)
             ).fetchone()[0]
         return normal + (chain if include_roll else 0)
+
+    def bets_used(self, race_date: str, org: str, exclude_id: int | None = None) -> int:
+        """その日・その競馬（地方か中央）で、予算（bet_limit）に数える額。単勝と転がしは除く。"""
+        from .strategy import bets_cost
+        total = 0
+        for o in self.list_orders(race_date):
+            if (o["org"] == org and o["strategy"] == "holiday" and o["status"] in COUNTED
+                    and o["id"] != exclude_id):
+                total += bets_cost(o["tickets"])
+        return total
 
     def find_duplicate(self, dedupe_key: str) -> dict | None:
         with self.conn() as c:

@@ -1,53 +1,62 @@
-"""資金のルール。
+"""資金のルール（地方と中央で分ける。曜日による違いはない）。
 
-◎★の買い方（土日祝・平日とも）: 1レースごとに ◎ と ★ を受け取り、
-      単勝◎（tansho_base円から、外れるたびにtansho_base円ずつ増やす）
-      ワイド◎-★ 各wide_amount円、複勝★ 各fukusho_amount円 を買う。◎が無いレースは複勝★だけ。
-      単勝が一度当たったら、その日はそれ以降、単勝だけ買わない（ワイド・複勝は続ける）。
-      1日の上限（土日祝 holiday_limit / 平日 weekday_bet_limit）を超える買い目は保留にして、スマホで判断してもらう。
-平日の転がし: ◎のあるレースで、複勝◎の転がしもする（◎★のレースは、◎★の買い方と両方）。
-      roll_stake（500円）から始め、的中したら払戻金を全額次へ。
-      roll_target（4回）連続で的中するか、weekday_limit（3000円）を使い切ったら終了。
+地方競馬
+  複勝◎の転がし: ◎のあるレースで、roll_stake（500円）から始め、的中したら払戻金を全額次へ。
+      roll_target（4回）連続で的中するか、roll_budget（3,000円＝6回外れ）を使い切ったら終了。
+  ◎★の馬券: ワイド◎→★流し・3連複◎→★流し・複勝★（各100円）。予算 bet_limit（7,000円）。
+  単勝は買わない。
+中央競馬
+  単勝◎: tansho_base（100円）から、外れるたびに100円ずつ増やす（100→200→…→700円、計2,800円）。
+      tansho_max_losses（7回）連続で外れるか、一度当たったら、その日の単勝は終了。
+      直前の単勝オッズが tansho_min_odds（2.1倍）以下なら、その回は単勝だけ見送る（外れには数えない）。
+  ◎★の馬券: 地方と同じ。予算 bet_limit（7,000円）。地方とは別に数える。
+共通
+  ◎がないレースは複勝★だけ。3連複の流しは★が2頭以上のときだけ（★から2頭の組み合わせを全部）。
+  予算を超える買い目は保留にして、スマホで「買う／見送る」を選んでもらう。
 """
 from __future__ import annotations
 
-from datetime import date
+from itertools import combinations
 
 from .betting import Ticket
-
-try:
-    import jpholiday
-except ImportError:  # 祝日判定ライブラリが無ければ土日だけで判定
-    jpholiday = None
-
-
-def is_holiday(d: date) -> bool:
-    return d.weekday() >= 5 or bool(jpholiday and jpholiday.is_holiday(d))
-
-
-def day_limit(d: date, settings: dict) -> int:
-    """◎★の買い方の1日の上限（転がしの資金は別）。"""
-    return settings["holiday_limit"] if is_holiday(d) else settings["weekday_bet_limit"]
 
 
 def floor100(yen: int) -> int:
     return yen // 100 * 100
 
 
-def holiday_tickets(plan: dict, settings: dict, tansho_amount: int) -> list[Ticket]:
-    """◎と★から馬券を作る。tansho_amount=0なら単勝は買わない。◎が無いレースは複勝★だけ。"""
+def plans_for(org: str, honmei: int | None, stars: list[int]) -> list[str]:
+    """1レースで予約する買い方。roll=複勝◎の転がし（地方のみ）、holiday=◎★の馬券（中央は単勝◎も）。"""
+    out = []
+    if org == "nar" and honmei is not None:
+        out.append("roll")
+    if stars or (org == "jra" and honmei is not None):
+        out.append("holiday")
+    return out
+
+
+def bet_tickets(plan: dict, settings: dict, tansho_amount: int) -> list[Ticket]:
+    """◎と★から馬券を作る。tansho_amount=0なら単勝は買わない。"""
     h = plan.get("honmei")
-    stars = [s for s in plan["stars"] if s != h]
+    stars = sorted(s for s in plan["stars"] if s != h)
     out: list[Ticket] = []
-    if h is None:
-        return [Ticket("複勝", (s,), settings["fukusho_amount"]) for s in stars]
-    if tansho_amount:
+    if h is not None and tansho_amount:
         out.append(Ticket("単勝", (h,), tansho_amount))
-    for s in stars:
-        out.append(Ticket("ワイド", tuple(sorted((h, s))), settings["wide_amount"]))
+    if h is not None:
+        for s in stars:
+            out.append(Ticket("ワイド", tuple(sorted((h, s))), settings["wide_amount"]))
+        for a, b in combinations(stars, 2):
+            out.append(Ticket("3連複", tuple(sorted((h, a, b))), settings["sanrenpuku_amount"]))
     for s in stars:
         out.append(Ticket("複勝", (s,), settings["fukusho_amount"]))
     return out
+
+
+def bets_cost(tickets) -> int:
+    """予算（bet_limit）に数える額。単勝は別の予算なので除く。"""
+    def get(t, k):
+        return t[k] if isinstance(t, dict) else getattr(t, k)
+    return sum(get(t, "amount") for t in tickets if get(t, "bet_type") != "単勝")
 
 
 def tansho_amount(chain: dict, unresolved: int, settings: dict) -> int | None:
@@ -58,6 +67,8 @@ def tansho_amount(chain: dict, unresolved: int, settings: dict) -> int | None:
     if unresolved and settings["pending_policy"] == "skip":
         return None
     losses = chain["losses"] + (unresolved if settings["pending_policy"] == "assume_loss" else 0)
+    if losses >= settings["tansho_max_losses"]:
+        return None  # 予算（7回分）を使い切っている
     return settings["tansho_base"] * (1 + losses)
 
 
@@ -74,7 +85,7 @@ def roll_stake(chain: dict, settings: dict) -> tuple[int, bool] | None:
     """転がしで次に賭ける金額と、新しく500円から始めるかどうか。Noneなら資金切れ。"""
     if chain["stake"]:
         return chain["stake"], False
-    if chain["own_spent"] + settings["roll_stake"] > settings["weekday_limit"]:
+    if chain["own_spent"] + settings["roll_stake"] > settings["roll_budget"]:
         return None
     return settings["roll_stake"], True
 
@@ -91,9 +102,9 @@ def apply_roll_result(chain: dict, payout: int, settings: dict) -> dict:
             upd["message"] = f"{wins}回目的中（払戻 {payout:,}円）。次は {floor100(payout):,}円"
         return upd
     upd = {"wins": 0, "stake": None}
-    if chain["own_spent"] + settings["roll_stake"] > settings["weekday_limit"]:
-        upd.update(status="exhausted", message=f"外れ。資金 {settings['weekday_limit']:,}円を使い切ったので本日は終了")
+    if chain["own_spent"] + settings["roll_stake"] > settings["roll_budget"]:
+        upd.update(status="exhausted", message=f"外れ。資金 {settings['roll_budget']:,}円を使い切ったので本日は終了")
     else:
-        left = settings["weekday_limit"] - chain["own_spent"]
+        left = settings["roll_budget"] - chain["own_spent"]
         upd["message"] = f"外れ。残り資金 {left:,}円で {settings['roll_stake']}円から再挑戦"
     return upd

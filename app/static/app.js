@@ -87,34 +87,32 @@ function renderDay() {
   const chip = $("#mode-chip");
   chip.textContent = (S.settings.paused ? "一時停止中・" : "") + MODE[mode];
   chip.className = `chip ${mode}`;
-  const pct = Math.min(100, (d.used / Math.max(1, d.limit)) * 100);
-  let html = `<div class="row" style="justify-content:space-between"><h2 style="margin:0">${d.holiday ? "土日祝" : "平日"}のルール</h2>`
+  const meter = (used, limit) => `<div class="bar-meter ${used > limit ? "over" : ""}"><i style="width:${Math.min(100, (used / Math.max(1, limit)) * 100)}%"></i></div>`;
+  const ss = S.settings;
+  let html = `<div class="row" style="justify-content:space-between"><h2 style="margin:0">今日のルール</h2>`
     + `<span class="muted">${esc(d.date)}</span></div>`;
   const t = d.tansho;
   const tEnded = t.status !== "active";
-  html += `<h2 style="margin-top:12px">◎★の買い方${d.holiday ? "" : "（★のあるレース）"}</h2>
-    <p class="muted">単勝◎は外れるたびに${yen(S.settings.tansho_base)}ずつ増額し、一度的中したらその日は単勝だけ買いません。ワイド◎-★と複勝★は各${yen(S.settings.wide_amount)}です。</p>
+  const tLabel = t.status === "won" ? "的中で終了" : "7回外れで終了";
+  html += `<h2 style="margin-top:12px">中央競馬</h2>
+    <p class="muted">単勝◎は${yen(ss.tansho_base)}から外れるたびに増額（予算${yen(ss.tansho_base * ss.tansho_max_losses * (ss.tansho_max_losses + 1) / 2)}）。${ss.tansho_max_losses}回外れるか、当たったら単勝は終了。ワイド・3連複の流しと複勝★は予算${yen(d.limit)}。</p>
     <div class="stats">
-      <div class="stat"><b>${tEnded ? "終了" : yen(t.next)}</b><span>${tEnded ? "単勝は的中済み" : "次の単勝"}</span></div>
-      <div class="stat"><b>${t.losses}回</b><span>単勝の連続外れ</span></div>
-      <div class="stat"><b>${yen(d.used)}</b><span>使用 / 上限 ${yen(d.limit)}</span></div>
-    </div>
-    <div class="bar-meter ${d.used > d.limit ? "over" : ""}"><i style="width:${pct}%"></i></div>`;
+      <div class="stat"><b>${tEnded ? "終了" : yen(t.next)}</b><span>${tEnded ? tLabel : "次の単勝"}</span></div>
+      <div class="stat"><b>${t.losses} / ${ss.tansho_max_losses}回</b><span>単勝の連続外れ</span></div>
+      <div class="stat"><b>${yen(d.used.jra)}</b><span>流し・複勝 / ${yen(d.limit)}</span></div>
+    </div>${meter(d.used.jra, d.limit)}`;
   if (t.message) html += `<p class="msg">${esc(t.message)}</p>`;
-  if (!d.holiday) {
-    const r = d.roll;
-    const ended = r.status !== "active";
-    const rp = Math.min(100, (r.own_spent / Math.max(1, S.settings.weekday_limit)) * 100);
-    html += `<h2>複勝◎の転がし（◎のあるレース）</h2>
-      <p class="muted">複勝◎を${yen(S.settings.roll_stake)}から転がし、${S.settings.roll_target}回連続で的中するか資金${yen(S.settings.weekday_limit)}を使い切ったら終了します。</p>
-      <div class="stats">
-        <div class="stat"><b>${r.wins} / ${S.settings.roll_target}</b><span>連続的中</span></div>
-        <div class="stat"><b>${ended ? "終了" : yen(r.next)}</b><span>${ended ? (r.status === "won" ? "目標達成" : "資金切れ") : "次に賭ける額"}</span></div>
-        <div class="stat"><b>${yen(r.own_spent)}</b><span>使った資金 / ${yen(S.settings.weekday_limit)}</span></div>
-      </div>
-      <div class="bar-meter"><i style="width:${rp}%"></i></div>`;
-    if (r.message) html += `<p class="msg">${esc(r.message)}</p>`;
-  }
+  const r = d.roll;
+  const ended = r.status !== "active";
+  html += `<h2>地方競馬</h2>
+    <p class="muted">複勝◎を${yen(ss.roll_stake)}から転がし、${ss.roll_target}回連続で的中するか資金${yen(ss.roll_budget)}を使い切ったら終了。ワイド・3連複の流しと複勝★は予算${yen(d.limit)}。</p>
+    <div class="stats">
+      <div class="stat"><b>${r.wins} / ${ss.roll_target}</b><span>転がしの連続的中</span></div>
+      <div class="stat"><b>${ended ? "終了" : yen(r.next)}</b><span>${ended ? (r.status === "won" ? "目標達成" : "資金切れ") : "次の転がし"}</span></div>
+      <div class="stat"><b>${yen(r.own_spent)}</b><span>転がしの資金 / ${yen(ss.roll_budget)}</span></div>
+      <div class="stat"><b>${yen(d.used.nar)}</b><span>流し・複勝 / ${yen(d.limit)}</span></div>
+    </div>${meter(d.used.nar, d.limit)}`;
+  if (r.message) html += `<p class="msg">${esc(r.message)}</p>`;
   $("#day-card").innerHTML = html;
 }
 
@@ -243,9 +241,12 @@ function renderParse() {
       + p.rows.map((r) => `<tr><td>${esc(r.venue)}${r.race_no}R${r.post_time ? `<br><span class="muted">${esc(r.post_time)}</span>` : ""}</td>`
         + `<td class="${r.strategy ? "" : "muted"}">${esc(r.desc)}</td></tr>`).join("")
       + `</table></div>`;
-    html += `<p class="muted">ワイド・複勝の合計 ${yen(p.fixed_cost)} ＋ 単勝${p.tansho_races}レース分（100円から増額）`
-      + (p.holiday ? "" : "。◎のあるレースは、複勝◎の転がしの候補にもします")
-      + `。発走時刻は自動で取得します。</p>`;
+    const parts = [];
+    if (p.bets_cost.jra) parts.push(`中央の流し・複勝 ${yen(p.bets_cost.jra)}`);
+    if (p.bets_cost.nar) parts.push(`地方の流し・複勝 ${yen(p.bets_cost.nar)}`);
+    if (p.tansho_races) parts.push(`単勝${p.tansho_races}レース分（100円から増額）`);
+    html += `<p class="muted">${parts.join(" ＋ ") || "金額は投票時に決まります"}（予算はそれぞれ${yen(p.limit)}）。`
+      + `地方の◎は複勝の転がしにも使います。発走時刻は自動で取得します。</p>`;
     html += `<button id="btn-bulk" class="primary" ${p.errors.length ? "disabled" : ""}>この内容で予約する</button>`;
   }
   $("#parse-out").innerHTML = html;

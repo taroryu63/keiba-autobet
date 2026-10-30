@@ -104,21 +104,31 @@ ONSCREEN_JS = r"""([sel, text, index, contains]) => {
 }"""
 
 
-def wide_nagashi(tickets: list[dict]) -> tuple[dict | None, list[dict]]:
-    """同じ金額のワイドが2点以上あり、全部に共通の馬（◎）がいれば、流し1つにまとめる。
-    戻り値: (流し {"axis", "partners", "amount"（1組あたり）} または None, 残りの馬券)"""
-    wides = [t for t in tickets if t["bet_type"] == "ワイド"]
-    if len(wides) < 2 or len({t["amount"] for t in wides}) != 1:
+def make_nagashi(tickets: list[dict], bet_type: str) -> tuple[dict | None, list[dict]]:
+    """bet_type（ワイド・3連複）の馬券が、◎を軸にした流しの全部の組み合わせなら、流し1つにまとめる。
+    戻り値: (流し {"bet_type", "axis", "partners", "amount"（1組あたり）, "points"} または None, 残りの馬券)"""
+    from itertools import combinations
+    same = [t for t in tickets if t["bet_type"] == bet_type]
+    if len(same) < 2 or len({t["amount"] for t in same}) != 1:
         return None, tickets
-    common = set(wides[0]["combo"])
-    for t in wides[1:]:
+    common = set(same[0]["combo"])
+    for t in same[1:]:
         common &= set(t["combo"])
     if len(common) != 1:
         return None, tickets
     axis = common.pop()
-    partners = [n for t in wides for n in t["combo"] if n != axis]
-    rest = [t for t in tickets if t["bet_type"] != "ワイド"]
-    return {"axis": axis, "partners": partners, "amount": wides[0]["amount"]}, rest
+    partners = sorted({n for t in same for n in t["combo"] if n != axis})
+    k = len(same[0]["combo"]) - 1  # 相手から選ぶ頭数（ワイド1頭、3連複2頭）
+    want = {tuple(sorted((axis, *c))) for c in combinations(partners, k)}
+    if want != {tuple(sorted(t["combo"])) for t in same}:
+        return None, tickets  # 流しの全部の組み合わせでなければ、まとめない
+    rest = [t for t in tickets if t["bet_type"] != bet_type]
+    return {"bet_type": bet_type, "axis": axis, "partners": partners,
+            "amount": same[0]["amount"], "points": len(same)}, rest
+
+
+def wide_nagashi(tickets: list[dict]) -> tuple[dict | None, list[dict]]:
+    return make_nagashi(tickets, "ワイド")
 
 
 def load_flow(site: str) -> dict:
@@ -419,12 +429,15 @@ class SiteBot:
         """マークカード式のサイト（SPAT4）。
         カードに印をつける → 「投票金額入力へ」→ 1行ずつ金額 →（続きがあれば「買い目を追加する」）を繰り返す。
         カードの入力は券種ごとに分ける（途中で券種を変えると、それまでの印が消えるため）。
-        ワイドは◎からの流しにまとめて、カード1枚で入れる。"""
+        ワイドと3連複は◎からの流しにまとめて、カード1枚（軸と相手）で入れる。"""
         per_page = self.flow.get("cards_per_page", 6)
         groups = []
-        nagashi, rest = wide_nagashi(tickets) if self.flow.get("nagashi") else (None, tickets)
-        if nagashi:
-            groups.append(("nagashi", nagashi))
+        rest = tickets
+        if self.flow.get("nagashi"):
+            for bt in ("ワイド", "3連複"):
+                nagashi, rest = make_nagashi(rest, bt)
+                if nagashi:
+                    groups.append(("nagashi", nagashi))
         # SPAT4は、カードの途中で券種を変えると入力が消える（「式別を変更すると選択した内容がクリアされます」）。
         # そのため券種ごとに分け、それぞれ金額まで入れてから「買い目を追加する」で次の券種に進む
         by_type: dict[str, list[dict]] = {}
@@ -439,7 +452,7 @@ class SiteBot:
             if gi:
                 await self.run("add_more", base)
             if kind == "nagashi":
-                v = {**base, "bet_label": labels.get("ワイド", "ワイド")}
+                v = {**base, "bet_label": labels.get(g["bet_type"], g["bet_type"])}
                 await self.run("nagashi", v)
                 await self.run("pick", {**v, "num": g["axis"], "card": 1, "card0": 0})
                 for n in g["partners"]:

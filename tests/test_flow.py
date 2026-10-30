@@ -86,13 +86,15 @@ def test_requires_login(tmp_path, monkeypatch):
         assert c.post("/api/login", json={"password": "wrong"}).status_code == 401
 
 
-def test_holiday_flow(client):
+def test_jra_flow(client):
+    """中央：単勝◎は外れるたびに増額、2.1倍以下は見送り、当たったら単勝だけ止める。"""
     c = client
     c.put("/api/settings", json={"mode": "live"})
     text = "東京\n1R ◎1 ★2.3\n2R ◎4\n3R ◎5 ★6\n4R ★7.8\n5R ◎9 ★1\n6R ◎2\n"
     preview = c.post("/api/parse", json={"race_date": "2026-11-01", "text": text}).json()
-    assert preview["holiday"] and preview["errors"] == []
-    assert preview["rows"][3]["desc"].startswith("複勝 7.8")
+    assert preview["errors"] == []
+    assert preview["rows"][3]["desc"].startswith("複勝7.8")
+    assert "単勝◎1" in preview["rows"][0]["desc"] and "3連複1→2.3（1点" in preview["rows"][0]["desc"]
     assert c.post("/api/bulk", json={"race_date": "2026-11-01", "text": text}).json()["created"] == 6
 
     # 発走時刻はnetkeibaの一覧から入る
@@ -103,7 +105,7 @@ def test_holiday_flow(client):
 
     tick(c, "09:55")  # 1R 投票
     assert FakeBot.votes[-1][3][0] == {"bet_type": "単勝", "combo": [1], "amount": 100}
-    assert len(FakeBot.votes[-1][3]) == 5  # 単勝1 + ワイド2 + 複勝2
+    assert len(FakeBot.votes[-1][3]) == 6  # 単勝1 + ワイド2 + 3連複1 + 複勝2
 
     settle(c, "東京", 1, winner=2, fuku={(2,): 150}, wide={(1, 2): 400})
     tick(c, "10:10")  # 結果確認
@@ -132,7 +134,7 @@ def test_holiday_flow(client):
 
 def test_holiday_limit_holds(client):
     c = client
-    c.put("/api/settings", json={"mode": "live", "holiday_limit": 300})
+    c.put("/api/settings", json={"mode": "live", "bet_limit": 300})
     c.post("/api/bulk", json={"race_date": "2026-11-01", "text": "東京\n1R 10:00 ◎1 ★2\n2R 11:00 ◎3 ★4"})
     tick(c, "09:55")
     tick(c, "10:55")
@@ -149,19 +151,20 @@ def by_strategy(c, d):
             for o in c.get("/api/state", params={"d": d}).json()["orders"]}
 
 
-def test_weekday_roll_and_bets(client):
-    """平日：◎は転がし、◎★のレースは転がしと◎★の買い方の両方、★だけは複勝★。"""
+def test_nar_roll_and_bets(client):
+    """地方：◎は転がし、◎★は転がしと流し・複勝の両方、★だけは複勝★。単勝は買わない。"""
     c = client
     c.clock["now"] = datetime(2026, 11, 2, 8, 0, tzinfo=JST)  # 月曜
     c.put("/api/settings", json={"mode": "live"})
     text = "大井\n1R 15:00 ◎1 ★2.3\n2R 15:05 ◎4\n3R 16:00 ◎5\n4R 16:30 ★6"
     preview = c.post("/api/parse", json={"race_date": "2026-11-02", "text": text}).json()
     assert preview["rows"][0]["strategy"] == "roll+holiday"
+    assert "3連複1→2.3（1点" in preview["rows"][0]["desc"] and "単勝" not in preview["rows"][0]["desc"]
     r = c.post("/api/bulk", json={"race_date": "2026-11-02", "text": text}).json()
     assert r["created"] == 5 and r["skipped"] == []
-    tick(c, "14:55")  # 1R: 転がし（複勝◎500円）と◎★の買い方（単勝◎100円・ワイド・複勝★）
-    kinds = sorted((v[3][0]["bet_type"], len(v[3])) for v in FakeBot.votes)
-    assert kinds == [("単勝", 5), ("複勝", 1)]
+    tick(c, "14:55")  # 1R: 転がし（複勝◎500円）と、ワイド2点・3連複1点・複勝2点
+    got = sorted([t["bet_type"] for t in v[3]] for v in FakeBot.votes)
+    assert got == [["ワイド", "ワイド", "3連複", "複勝", "複勝"], ["複勝"]]
     assert [{"bet_type": "複勝", "combo": [1], "amount": 500}] in [v[3] for v in FakeBot.votes]
     tick(c, "15:00")  # 2Rの転がしは、1Rの結果待ちで見送り
     assert by_strategy(c, "2026-11-02")[("大井", 2, "roll")]["status"] == "skipped"
@@ -175,13 +178,11 @@ def test_weekday_roll_and_bets(client):
     assert FakeBot.votes[-1][3] == [{"bet_type": "複勝", "combo": [6], "amount": 100}]
     day = c.get("/api/state", params={"d": "2026-11-02"}).json()["day"]
     assert day["roll"]["wins"] == 1 and day["roll"]["own_spent"] == 500
-    # 1Rの単勝◎1番が的中したので、平日も単勝はこの日終了
-    assert day["tansho"]["status"] == "won"
-    # ◎★の買い方の使用額（転がしの元手は含まない）: 1R 500円 + 4R 100円
-    assert day["used"] == 600 and day["limit"] == 10000
+    # 地方の流し・複勝の使用額（転がしの元手は含まない）: 1R 500円 + 4R 100円
+    assert day["used"] == {"jra": 0, "nar": 600} and day["limit"] == 7000
 
 
-def test_holiday_rejects_roll(client):
+def test_jra_rejects_roll(client):
     c = client
     r = c.post("/api/orders", json={"strategy": "roll", "org": "jra", "race_date": "2026-11-01",
                                     "venue": "東京", "race_no": 1, "post_time": "15:00", "horse": 1})
