@@ -10,7 +10,7 @@ STAGES = [
     ("odds", "単勝オッズの読み取り"),
     ("ticket", "馬券の入力（複勝100円）"),
     ("confirm", "確認画面（合計金額）"),
-    ("many", "土日の買い方で入力（単勝・ワイド流し・複勝6点、購入はしません）"),
+    ("many", "今のルールの買い方で入力（流し・複勝、中央は単勝も。購入はしません）"),
 ]
 
 # 読めなくても投票は進められる段階。失敗しても次へ進む
@@ -19,13 +19,16 @@ OPTIONAL = {"time", "odds"}
 ALWAYS = {"many"}
 
 
-def sample_order(venue: str, race_no: int, horse: int) -> dict:
-    """土日の買い方の見本: 単勝◎、ワイド◎-★2点（流し）、複勝★6点 = 9点 900円。"""
-    stars = [((horse + k - 1) % 8) + 1 for k in range(1, 7)]  # ◎以外の6頭（1〜8番から）
-    tickets = [{"bet_type": "単勝", "combo": [horse], "amount": 100}]
-    tickets += [{"bet_type": "ワイド", "combo": sorted([horse, s]), "amount": 100} for s in stars[:2]]
-    tickets += [{"bet_type": "複勝", "combo": [s], "amount": 100} for s in stars]
-    return {"id": 0, "venue": venue, "race_no": race_no, "bet_type": "◎★", "tickets": tickets,
+def sample_order(venue: str, race_no: int, horse: int, org: str = "jra") -> dict:
+    """今のルールの見本: ◎＝horse、★＝その次の3頭（1〜8番から）。
+    中央：単勝◎＋ワイド流し3点＋3連複流し3点＋複勝★3点＝10点 1,000円
+    地方：ワイド流し3点＋3連複流し3点＋複勝★3点＝9点 900円"""
+    from .db import DEFAULT_SETTINGS
+    from .strategy import bet_tickets
+    stars = [((horse + k - 1) % 8) + 1 for k in range(1, 4)]
+    ts = bet_tickets({"honmei": horse, "stars": stars}, DEFAULT_SETTINGS, 100 if org == "jra" else 0)
+    tickets = [{"bet_type": t.bet_type, "combo": list(t.combo), "amount": t.amount} for t in ts]
+    return {"id": 0, "org": org, "venue": venue, "race_no": race_no, "bet_type": "◎★", "tickets": tickets,
             "points": len(tickets), "total": sum(t["amount"] for t in tickets), "unit_amount": 100}
 
 
@@ -40,7 +43,7 @@ async def run_check(bot: SiteBot, venue: str, race_no: int, horse: int) -> list[
             await bot.run("cancel", vars)
         except Exception:
             pass
-        order = sample_order(venue, race_no, horse)
+        order = sample_order(venue, race_no, horse, "nar" if bot.site == "spat4" else "jra")
         res = await bot.vote(order, "rehearsal")
         if res.status != "rehearsed":
             raise RuntimeError(res.message)

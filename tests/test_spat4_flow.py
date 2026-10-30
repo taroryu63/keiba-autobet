@@ -23,7 +23,7 @@ from .test_engine import chromium
 MOCK = """<!doctype html><meta charset="utf-8"><body>
 <div id="cards">
   <div class="tabs"><a onclick="tab('c')">単･複･連勝複式</a><a onclick="tab('n')">連複流し</a></div>
-  <div class="types"><span class="t">単勝</span><span class="t">複勝</span><span class="t">ワイド</span></div>
+  <div class="types"><span class="t">単勝</span><span class="t">複勝</span><span class="t">ワイド</span><span class="t">三連複</span></div>
   <div id="tab-c"></div><div id="tab-n" style="position:absolute;left:-5000px"></div>
   <span id="goamount">投票金額入力へ</span>
 </div>
@@ -73,7 +73,8 @@ document.getElementById('goamount').onclick = () => {
     Object.keys(byCard).sort().forEach((k) => rows.push({ t: byCard[k].t, c: byCard[k].nums.join('-'), n: 1 }));
   } else {
     const axis = marks[0][0], partners = marks[1];
-    rows.push({ t: type + '流し', c: axis + '→' + partners.join('.'), n: partners.length });
+    const n = type === '三連複' ? partners.length * (partners.length - 1) / 2 : partners.length;
+    rows.push({ t: type + '流し', c: axis + '→' + partners.join('.'), n });
   }
   window.log = []; marks = [];
   draw(); document.getElementById('cards').style.display = 'none'; document.getElementById('amount').style.display = '';
@@ -117,8 +118,8 @@ def spat4(tmp_path, monkeypatch):
 def test_wide_nagashi_grouping():
     order = sample_order("大井", 11, 1)
     nag, rest = wide_nagashi(order["tickets"])
-    assert nag == {"bet_type": "ワイド", "axis": 1, "partners": [2, 3], "amount": 100, "points": 2}
-    assert [t["bet_type"] for t in rest] == ["単勝"] + ["複勝"] * 6
+    assert nag == {"bet_type": "ワイド", "axis": 1, "partners": [2, 3, 4], "amount": 100, "points": 3}
+    assert [t["bet_type"] for t in rest] == ["単勝"] + ["3連複"] * 3 + ["複勝"] * 3
     # 金額が違うワイドはまとめない
     t = [{"bet_type": "ワイド", "combo": [1, 2], "amount": 100}, {"bet_type": "ワイド", "combo": [1, 3], "amount": 200}]
     assert wide_nagashi(t)[0] is None
@@ -132,8 +133,8 @@ def test_sanrenpuku_nagashi_grouping():
     assert make_nagashi(t[:2], "3連複")[0] is None
 
 
-def test_holiday_order_on_mark_cards(spat4):
-    order = sample_order("大井", 11, 1)  # 単勝1、ワイド1-2,1-3、複勝2〜7 = 900円
+def test_nar_order_on_mark_cards(spat4):
+    order = sample_order("大井", 11, 1, "nar")  # ワイド1→2.3.4、3連複1→2.3.4、複勝2.3.4 = 900円
 
     async def go():
         async with spat4 as bot:
@@ -147,12 +148,11 @@ def test_holiday_order_on_mark_cards(spat4):
     res, rows, filled = asyncio.run(go())
     assert res.status == "rehearsed", res.message
     assert filled == ["1234", "900"]  # 暗証番号と、確認のための合計金額
-    # 流し1行、単勝1点、複勝6点（券種ごとに分けて入れる）
+    # ワイドと3連複は流し1行ずつ、複勝は1点ずつ
     assert [(r["t"], r["c"], r["v"]) for r in rows] == [
-        ("ワイド流し", "1→2.3", "1"),
-        ("単勝", "1", "1"),
-        ("複勝", "2", "1"), ("複勝", "3", "1"), ("複勝", "4", "1"), ("複勝", "5", "1"),
-        ("複勝", "6", "1"), ("複勝", "7", "1"),
+        ("ワイド流し", "1→2.3.4", "1"),
+        ("三連複流し", "1→2.3.4", "1"),
+        ("複勝", "2", "1"), ("複勝", "3", "1"), ("複勝", "4", "1"),
     ]
 
 

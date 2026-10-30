@@ -14,7 +14,7 @@ MOCK_HTML = """<!doctype html><meta charset="utf-8"><body>
 <div id="race" hidden>
   <table><tr data-n="4"><td class="num">4</td><td class="odds">ODDS4</td></tr>
          <tr data-n="5"><td class="num">5</td><td class="odds">8.0</td></tr></table>
-  <select id="type"><option>単勝</option><option>複勝</option><option>ワイド</option></select>
+  <select id="type"><option>単勝</option><option>複勝</option><option>ワイド</option><option>3連複</option></select>
   <span id="marks"></span>
   MARKS
   <input id="units"><button id="set" onclick="setT()">セット</button>
@@ -37,7 +37,7 @@ function again(){total=0;sets=[];document.getElementById('sum').textContent='';
   document.getElementById('race').hidden=false;document.getElementById('done').hidden=true}
 </script>"""
 MOCK_HTML = MOCK_HTML.replace("MARKS", "".join(
-    f'<button id="m{c}-{n}" onclick="pick({c},{n})">{c}-{n}</button>' for c in (1, 2) for n in range(1, 17)))
+    f'<button id="m{c}-{n}" onclick="pick({c},{n})">{c}-{n}</button>' for c in (1, 2, 3) for n in range(1, 17)))
 
 FLOW = {
     "required": ["user"],
