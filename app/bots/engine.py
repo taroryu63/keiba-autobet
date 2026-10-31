@@ -104,6 +104,22 @@ ONSCREEN_JS = r"""([sel, text, index, contains]) => {
 }"""
 
 
+RECEIPT_ROWS_JS = r"""([rowSel, paySel]) => {
+  const norm = (t) => (t || '').replace(/\s+/g, '');
+  return [...document.querySelectorAll(rowSel)].filter((tr) => tr.getClientRects().length).map((tr) => {
+    // 「的中」が画像（alt）で出るサイトもあるので、画像の説明も文字に含める
+    const alts = [...tr.querySelectorAll('img[alt]')].filter((i) => i.getClientRects().length).map((i) => i.alt).join('');
+    const pay = paySel ? tr.querySelector(paySel) : null;
+    return { text: norm(tr.textContent) + alts, pay: pay ? norm(pay.textContent) : '' };
+  });
+}"""
+
+
+def _yen(text: str) -> int:
+    m = re.search(r"([\d,]+)円", text or "")
+    return int(m.group(1).replace(",", "")) if m else 0
+
+
 def make_nagashi(tickets: list[dict], bet_type: str) -> tuple[dict | None, list[dict]]:
     """bet_type（ワイド・3連複）の馬券が、◎を軸にした流しの全部の組み合わせなら、流し1つにまとめる。
     戻り値: (流し {"bet_type", "axis", "partners", "amount"（1組あたり）, "points"} または None, 残りの馬券)"""
@@ -401,9 +417,58 @@ class SiteBot:
     async def check_result(self, order: dict) -> dict:
         """払戻を確認する。{"settled": 確定なら1, "payout": この買い目の払戻合計,
         "tansho_hit": 単勝が当たったら1, "winner": 1着馬番} のうち読めたものを返す。"""
+        if self.flow.get("receipts"):
+            return await self._check_receipts(order)
         vars = {**self.credentials, "venue": order["venue"], "race_no": order["race_no"]}
         got = await self.read_numbers("result", vars, ("settled", "winner", "payout", "tansho_hit"))
         return {k: int(v) for k, v in got.items()}
+
+    async def _check_receipts(self, order: dict) -> dict:
+        """投票サイトの当日の照会から払戻を読む（flowの "receipts" の設定を使う）。
+        即PATもSPAT4も、外れの馬券とまだ走っていない馬券は見分けがつかない（どちらも印も金額もない）。
+        そこで当たりの印がある受付番号だけを開き、このレースに「的中」「返還」があれば確定とする。
+        見つからなければ {} を返す（あとでもう一度確かめ、だめなら手入力を頼む）。"""
+        cfg = self.flow["receipts"]
+        vars = {**self.credentials, "venue": order["venue"], "race_no": order["race_no"]}
+        race = re.compile(re.escape(order["venue"]) + r".*?(?<!\d)" + str(order["race_no"]) + "R")
+        await self.run("receipts_open", vars)
+        n = await self._visible_count(cfg["links"])
+        settled = tansho_hit = False
+        payout = 0
+        for i in range(n):
+            if i:
+                await self.run("receipts_open", vars)
+            await self.page.locator(cfg["links"]).filter(visible=True).nth(i).click(timeout=10000)
+            await self.page.wait_for_timeout(1500)
+            rows = await self.page.evaluate(RECEIPT_ROWS_JS, [cfg["rows"], cfg.get("row_payout", "")])
+            mine = [r for r in rows if race.search(r["text"])]
+            if not mine:
+                continue
+            hits = [r for r in mine if "的中" in r["text"] or "返還" in r["text"]]
+            if not hits:
+                continue
+            settled = True
+            tansho_hit = tansho_hit or any("単勝" in r["text"] and "的中" in r["text"] for r in hits)
+            if cfg.get("row_payout"):
+                payout += sum(_yen(r["pay"]) for r in mine)
+            else:
+                if len(mine) != len(rows):
+                    # 受付番号の払戻合計しか出ないサイトで、他のレースと一緒に買った受付番号は分けられない
+                    raise StepError("他のレースと同じ受付番号のため、払戻金を分けられません")
+                text = await self.page.locator(cfg["receipt_payout"]).filter(visible=True).first.inner_text(timeout=5000)
+                m = re.search(r"払戻金額\s*[:：]\s*([\d,]+)", text)
+                if not m:
+                    raise StepError(f"払戻金額を読み取れません: {text!r}")
+                payout += int(m.group(1).replace(",", ""))
+        if not settled:
+            return {}
+        return {"settled": 1, "payout": payout, "tansho_hit": int(tansho_hit)}
+
+    async def _visible_count(self, sel: str) -> int:
+        try:
+            return await self.page.locator(sel).filter(visible=True).count()
+        except Exception:
+            return 0
 
     async def _enter(self, tickets: list[dict], base: dict) -> None:
         """馬券を入力する（購入はしない）。base の total などはこの分の金額に書き換える。"""

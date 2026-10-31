@@ -197,7 +197,13 @@ def test_all_selectors_are_valid():
             pg = await b.new_page()
             await pg.set_content("<p>x</p>")
             for f in (Path(__file__).parent.parent / "app" / "selectors").glob("*.json"):
-                for sec, steps in json.loads(f.read_text(encoding="utf-8")).items():
+                flow = json.loads(f.read_text(encoding="utf-8"))
+                for sel in (v for k, v in flow.get("receipts", {}).items() if k != "row_payout"):
+                    try:
+                        await pg.locator(sel).count()
+                    except Exception:
+                        bad.append(f"{f.name} receipts: {sel}")
+                for sec, steps in flow.items():
                     for st in steps if isinstance(steps, list) else []:
                         if isinstance(st, dict) and "sel" in st:
                             try:
@@ -247,3 +253,53 @@ def test_js_fallback_when_button_has_no_size(site):
             await bot._step({"do": "click", "sel": "a.loginbtn", "timeout": 800, "js_fallback": "loginCheck()"}, {})
             return await bot.page.evaluate("window.done")
     assert asyncio.run(go()) == 2
+
+
+RECEIPT_HTML = """<!doctype html><meta charset="utf-8"><body>
+<button id="home" onclick="home()">照会</button>
+<div id="list"><a class="r" onclick="show(0)">0001 ○</a><a class="r" onclick="show(1)">0002 ○</a>
+  <a class="r" onclick="show(2)">0003</a></div>
+<div class="d" hidden><table>
+  <tr><td>東京 11R</td><td>単勝</td><td><img alt="的中" src="data:,"></td><td class="pay">300円</td></tr>
+  <tr><td>東京 11R</td><td>複勝</td><td></td><td class="pay"></td></tr></table>
+  <div class="total">購入金額：200円 払戻金額：300円</div></div>
+<div class="d" hidden><table>
+  <tr><td>京都 11R</td><td>ワイド</td><td>的中</td><td class="pay">1,500円</td></tr></table>
+  <div class="total">購入金額：100円 払戻金額：1,500円</div></div>
+<div class="d" hidden><table><tr><td>東京 1R</td><td>単勝</td><td></td><td class="pay"></td></tr></table></div>
+<script>
+const ds = document.querySelectorAll('.d');
+function home(){document.getElementById('list').hidden=false; ds.forEach(d => d.hidden=true)}
+function show(i){document.getElementById('list').hidden=true; ds[i].hidden=false}
+</script>"""
+
+
+@pytest.mark.parametrize("by_row", [True, False])
+def test_check_result_from_receipts(tmp_path, monkeypatch, by_row):
+    """照会の受付番号から払戻を読む。当たりの印がある受付番号だけを開き、
+    このレースに「的中」があれば確定。外れとまだ走っていないものは見分けられないので {}。"""
+    if not os.path.exists(chromium):
+        pytest.skip("Chromiumがありません")
+    monkeypatch.setattr(config, "data_dir", tmp_path)
+    monkeypatch.setattr(config, "chromium_path", chromium)
+    (tmp_path / "selectors").mkdir()
+    page = tmp_path / "receipts.html"
+    page.write_text(RECEIPT_HTML, encoding="utf-8")
+    receipts = {"links": "a.r:has-text('○')", "rows": "tr"}
+    receipts.update({"row_payout": "td.pay"} if by_row else {"receipt_payout": ".total"})
+    flow = {"required": [], "timeout": 2000,
+            "login": [{"do": "goto", "url": page.as_uri()}],
+            "receipts_open": [{"do": "click", "sel": "#home"}],
+            "receipts": receipts}
+    (tmp_path / "selectors" / "mock.json").write_text(json.dumps(flow), encoding="utf-8")
+
+    async def go():
+        bot = SiteBot("mock", {})
+        async with bot:
+            await bot.login()
+            return [await bot.check_result({"venue": v, "race_no": r}) for v, r in
+                    (("東京", 11), ("京都", 11), ("東京", 1))]
+    tokyo, kyoto, tokyo1 = asyncio.run(go())
+    assert tokyo == {"settled": 1, "payout": 300, "tansho_hit": 1}
+    assert kyoto == {"settled": 1, "payout": 1500, "tansho_hit": 0}
+    assert tokyo1 == {}  # 当たりの印のない受付番号は開かず、「11R」を「1R」と取り違えない

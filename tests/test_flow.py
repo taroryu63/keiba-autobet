@@ -69,7 +69,7 @@ def tick(c, hhmm, day=None):
 
 def settle(c, venue, race_no, winner, fuku=None, wide=None, tan=500):
     r = RaceResult(settled=True, ranks={winner: 1}, odds={winner: tan / 100})
-    r.pay = {"単勝": {(winner,): tan}, "複勝": fuku or {}, "ワイド": wide or {}}
+    r.pay = {"単勝": {(winner,): tan}, "複勝": fuku or {}, "ワイド": wide or {}, "3連複": {}}
     c.race_results[f"{venue}{race_no}"] = r
 
 

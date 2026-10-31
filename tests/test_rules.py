@@ -238,6 +238,17 @@ def test_result_without_rank_table_uses_tansho_payout():
     assert r.ranks == {} and r.settled and r.winner == 8
 
 
+def test_result_waits_for_all_bet_types():
+    """レース直後のnetkeibaは単勝の払戻金だけのことがある（2026/10/31 東京12Rで起きた）。
+    買った券種の払戻金が全部出るまでは、払戻を計算しない。"""
+    tansho_only = RESULT_HTML.split('<tr class="Fukusho">')[0] + "</table>"
+    r = parse_result(tansho_only)
+    tickets = [{"bet_type": "単勝", "combo": [8], "amount": 100},
+               {"bet_type": "複勝", "combo": [8], "amount": 100}]
+    assert r.settled and not r.has_all(tickets)
+    assert parse_result(RESULT_HTML).has_all(tickets)
+
+
 def test_sim_nar_mixes_roll_and_bets():
     """地方：◎だけは転がしのみ、◎★は転がしと流し・複勝、★だけは複勝★。単勝は買わない。"""
     races = [{"org": "nar", "venue": "大井", "race_no": 1, "post_time": "15:00", "honmei": 1, "stars": [2, 3]},

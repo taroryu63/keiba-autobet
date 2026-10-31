@@ -1,5 +1,5 @@
 {
-  "_note": "即PAT（PC版）の操作手順。実際の画面では未検証のため、rehearsalモードとtools/calibrate.pyで画面に合わせて調整してください。",
+  "_note": "即PAT（PC版）の操作手順。2026/10/31に本物の画面で、ログインから購入・投票履歴の払戻まで確認済み。",
   "required": [
     "inet_id",
     "subscriber",
@@ -38,7 +38,8 @@
     },
     {
       "do": "click",
-      "sel": "a:has-text('ネット投票メニューへ'), button:has-text('ネット投票メニューへ')"
+      "sel": "a[onclick*='ToModernMenu']",
+      "js_fallback": "ToModernMenu()"
     },
     {
       "do": "click",
@@ -48,19 +49,31 @@
     },
     {
       "do": "wait_for",
-      "sel": "button:has-text('通常投票')"
+      "sel": "button[href='#!/bet/basic']"
     }
   ],
   "post_time": [
     {
       "do": "click",
-      "sel": "button:has-text('トップ'), a:has-text('トップ')",
+      "sel": "a[href='#!/']:has-text('投票メニュー'), button:has-text('トップ'), a:has-text('トップ')",
       "optional": true,
       "timeout": 3000
     },
     {
       "do": "click",
-      "sel": "button:has-text('通常投票')"
+      "sel": ".ipat-error-window:not(.ng-hide) button.btn-ok",
+      "optional": true,
+      "timeout": 3000
+    },
+    {
+      "do": "click",
+      "sel": "button[href='#!/bet/basic']"
+    },
+    {
+      "do": "click",
+      "sel": "button:has-text('このまま進む')",
+      "optional": true,
+      "timeout": 3000
     },
     {
       "do": "click",
@@ -75,13 +88,25 @@
   "open_race": [
     {
       "do": "click",
-      "sel": "button:has-text('トップ'), a:has-text('トップ')",
+      "sel": "a[href='#!/']:has-text('投票メニュー'), button:has-text('トップ'), a:has-text('トップ')",
       "optional": true,
       "timeout": 3000
     },
     {
       "do": "click",
-      "sel": "button:has-text('通常投票')"
+      "sel": ".ipat-error-window:not(.ng-hide) button.btn-ok",
+      "optional": true,
+      "timeout": 3000
+    },
+    {
+      "do": "click",
+      "sel": "button[href='#!/bet/basic']"
+    },
+    {
+      "do": "click",
+      "sel": "button:has-text('このまま進む')",
+      "optional": true,
+      "timeout": 3000
     },
     {
       "do": "click",
@@ -95,7 +120,7 @@
   "read_odds": [
     {
       "do": "read",
-      "sel": "tr:has(td.num:text-is('{num}')) td.odds_tan, tr:has(td.num:text-is('{num}')) .odds",
+      "sel": "tr:has(racer-no[n-horse-no='{num}']) td.racer-odds .odds-num",
       "var": "odds",
       "timeout": 4000
     }
@@ -104,7 +129,7 @@
     {
       "do": "select",
       "sel": "select#bet-basic-type",
-      "label": "{bet_type}"
+      "label": "{bet_label}"
     },
     {
       "do": "select",
@@ -123,13 +148,13 @@
     },
     {
       "do": "click",
-      "sel": "button:has-text('セット')"
+      "sel": "button.btn-set:text-is('セット')"
     }
   ],
   "pick": [
     {
       "do": "click",
-      "sel": "#no{num}-{col}, table.marks tr:has(td.num:text-is('{num}')) td.mark:nth-of-type({col}) label"
+      "sel": "label[for='horse{col}_no{num}'], label[for='no{num}']"
     }
   ],
   "confirm": [
@@ -169,44 +194,52 @@
   "cancel": [
     {
       "do": "click",
-      "sel": "button:has-text('全て取消'), button:has-text('全取消')",
+      "sel": "button.btn-vote-list",
       "optional": true,
       "timeout": 3000
     },
     {
       "do": "click",
-      "sel": "button:has-text('OK')",
+      "sel": "a:text-is('全て削除')",
+      "optional": true,
+      "timeout": 3000
+    },
+    {
+      "do": "click",
+      "sel": "button:has-text('OK'), button:has-text('はい')",
+      "optional": true,
+      "timeout": 3000
+    },
+    {
+      "do": "click",
+      "sel": "button:text-is('閉じる')",
       "optional": true,
       "timeout": 3000
     }
   ],
-  "result": [
+  "bet_labels": {
+    "3連複": "３連複",
+    "3連単": "３連単"
+  },
+  "receipts_open": [
     {
       "do": "click",
-      "sel": "button:has-text('照会'), a:has-text('照会')"
+      "sel": "button:text-is('閉じる')",
+      "optional": true,
+      "timeout": 2000
     },
     {
       "do": "click",
-      "sel": "button:has-text('投票履歴'), a:has-text('当日')",
-      "optional": true,
-      "timeout": 3000
+      "sel": "button.btn-reference"
     },
     {
-      "do": "has",
-      "sel": "tr:has-text('{venue}'):has-text('{race_no}R'):has-text('払戻')",
-      "var": "settled"
-    },
-    {
-      "do": "read",
-      "sel": "tr:has-text('{venue}'):has-text('{race_no}R') .payout",
-      "var": "payout",
-      "optional": true,
-      "timeout": 3000
-    },
-    {
-      "do": "has",
-      "sel": "tr:has-text('{venue}'):has-text('{race_no}R'):has-text('単勝'):has-text('的中')",
-      "var": "tansho_hit"
+      "do": "wait",
+      "ms": 1500
     }
-  ]
+  ],
+  "receipts": {
+    "links": "td.receipt:has(span.icon-return) a",
+    "rows": "tr[ng-repeat^='oNb in vm.oBetReferDetail']",
+    "receipt_payout": ".betmoney"
+  }
 }

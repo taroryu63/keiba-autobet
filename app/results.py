@@ -43,6 +43,11 @@ class RaceResult:
             w = next(iter(self.pay["単勝"]))[0]
         return w
 
+    def has_all(self, tickets: list[dict]) -> bool:
+        """馬券の全券種の払戻金が出ているか。netkeibaは払戻金を券種ごとに順に載せるので、
+        レース直後は単勝だけのことがある（2026/10/31 東京12Rで確認）。"""
+        return all(t["bet_type"] in self.pay for t in tickets)
+
     def payout(self, tickets: list[dict]) -> int:
         """馬券の払戻合計（円）。"""
         total = 0

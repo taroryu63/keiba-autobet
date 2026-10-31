@@ -295,7 +295,7 @@ class Runner:
             except Exception as e:
                 log.warning("netkeibaから結果を読めません #%s: %s", o["id"], e)
                 res = None
-            if res and res.settled:
+            if res and res.settled and res.has_all(o["tickets"]):
                 self.apply_result(o, {"settled": 1, "payout": res.payout(o["tickets"]), "winner": res.winner})
             elif live:
                 by_org.setdefault(o["org"], []).append(o)

@@ -222,29 +222,6 @@
       "timeout": 3000
     }
   ],
-  "result": [
-    {
-      "do": "click",
-      "sel": "a:has-text('投票照会'), a:has-text('照会')"
-    },
-    {
-      "do": "has",
-      "sel": "tr:has-text('{venue}'):has-text('{race_no}R'):has-text('払戻')",
-      "var": "settled"
-    },
-    {
-      "do": "read",
-      "sel": "tr:has-text('{venue}'):has-text('{race_no}R') .payout",
-      "var": "payout",
-      "optional": true,
-      "timeout": 3000
-    },
-    {
-      "do": "has",
-      "sel": "tr:has-text('{venue}'):has-text('{race_no}R'):has-text('単勝'):has-text('的中')",
-      "var": "tansho_hit"
-    }
-  ],
   "post_time_add_min": 1,
   "bet_labels": {
     "枠連": "枠複",
@@ -279,6 +256,13 @@
       "do": "click",
       "text": "{bet_label}",
       "onscreen": true
+    },
+    {
+      "do": "click",
+      "text": "軸1頭流し",
+      "onscreen": true,
+      "optional": true,
+      "timeout": 1500
     },
     {
       "do": "wait",
@@ -316,5 +300,27 @@
       "ms": 800
     }
   ],
-  "odds_before_open": true
+  "odds_before_open": true,
+  "receipts_open": [
+    {
+      "do": "main_window"
+    },
+    {
+      "do": "click",
+      "sel": "input[value='照会']"
+    },
+    {
+      "do": "click",
+      "sel": "a[onclick*='P302S']"
+    },
+    {
+      "do": "wait",
+      "ms": 1000
+    }
+  ],
+  "receipts": {
+    "links": "a[onclick*='selectRef']:has-text('○')",
+    "rows": "table.tbl_01 tr:has(td)",
+    "row_payout": "td:nth-child(8)"
+  }
 }
