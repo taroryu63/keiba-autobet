@@ -127,3 +127,5 @@ dialog::backdrop { background: rgb(0 0 0 / .45); }
 }
 #toast.show { opacity: 1; }
 .login { max-width: 360px; margin: 18vh auto 0; }
+.order .sub { margin-top: 8px; padding: 8px 10px; background: var(--bg, #f6f6f3); border-radius: 8px; }
+.order .sub .head b { font-size: 13px; }

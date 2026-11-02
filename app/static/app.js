@@ -151,14 +151,42 @@ $("#btn-cancel-all").addEventListener("click", async () => {
   }
 });
 
+const HIDDEN_ST = ["cancelled", "expired"];
+let showHidden = false;
+const KIND = { roll: "複勝◎の転がし", holiday: "ワイド・3連複・複勝★", manual: "手入力" };
+
 function renderOrders() {
-  const list = S.orders;
-  $("#btn-cancel-all").hidden = !list.some((o) => CANCELABLE.includes(o.status));
+  const all = S.orders;
+  $("#btn-cancel-all").hidden = !all.some((o) => CANCELABLE.includes(o.status));
+  const nHidden = all.filter((o) => HIDDEN_ST.includes(o.status)).length;
+  const list = showHidden ? all : all.filter((o) => !HIDDEN_ST.includes(o.status));
+  const toggle = nHidden ? `<p><button class="small ghost" id="btn-show-hidden">${showHidden ? "取消・締切切れを隠す" : `取消・締切切れ ${nHidden}件を表示`}</button></p>` : "";
   if (!list.length) {
-    $("#orders").innerHTML = `<p class="muted">この日の予約はありません。</p>`;
+    $("#orders").innerHTML = `<p class="muted">この日の予約はありません。</p>` + toggle;
     return;
   }
-  $("#orders").innerHTML = list.map((o) => {
+  // 同じレースの予約（転がしと流し・複勝）を1つの枠にまとめる
+  const groups = [];
+  for (const o of list) {
+    const key = `${o.venue}|${o.race_no}`;
+    let g = groups.find((x) => x.key === key);
+    if (!g) groups.push((g = { key, venue: o.venue, race_no: o.race_no, post_time: o.post_time, items: [] }));
+    g.items.push(o);
+  }
+  $("#orders").innerHTML = toggle + groups.map((g) => `<div class="order">
+      <div class="head"><span class="race">${esc(g.venue)}${g.race_no}R <span class="muted">${esc(g.post_time || "--:--")}</span></span></div>
+      ${g.items.map(orderItem).join("")}
+    </div>`).join("");
+}
+
+$("#orders").addEventListener("click", (e) => {
+  if (e.target.id !== "btn-show-hidden") return;
+  showHidden = !showHidden;
+  renderOrders();
+});
+
+function orderItem(o) {
+  {
     const acts = [];
     if (["needs_time", "queued", "pending"].includes(o.status)) acts.push(`<button class="small" data-act="time" data-id="${o.id}">発走時刻</button>`);
     if (o.status === "held") {
@@ -176,14 +204,14 @@ function renderOrders() {
     const money = o.total ? yen(o.total) : "";
     const pay = o.payout !== null && o.payout !== undefined ? ` → 払戻 ${yen(o.payout)}` : "";
     const extra = o.plan.tansho_skipped ? `（単勝見送り: ${esc(o.plan.tansho_skipped)}）` : "";
-    return `<div class="order">
-      <div class="head"><span class="race">${esc(o.venue)}${o.race_no}R <span class="muted">${esc(o.post_time || "--:--")}</span></span>
+    return `<div class="sub">
+      <div class="head"><b>${KIND[o.strategy] || ""}</b>
         <span class="st-${o.status}">${STATUS[o.status] || esc(o.status)}</span></div>
       <div class="tickets">${esc(ticketText(o))}</div>
       <div class="msg">${money}${pay} ${esc(o.message || "")}${extra}${o.plan.paper ? '<span class="chip">練習</span>' : ""}</div>
       ${acts.length ? `<div class="row">${acts.join("")}</div>` : ""}
     </div>`;
-  }).join("");
+  }
 }
 
 $("#orders").addEventListener("click", async (e) => {
