@@ -129,3 +129,6 @@ dialog::backdrop { background: rgb(0 0 0 / .45); }
 .login { max-width: 360px; margin: 18vh auto 0; }
 .order .sub { margin-top: 8px; padding: 8px 10px; background: var(--bg, #f6f6f3); border-radius: 8px; }
 .order .sub .head b { font-size: 13px; }
+[hidden] { display: none !important; }
+#pv-total-opts, #pv-day-opts { flex-wrap: nowrap; align-items: center; }
+#pv-total-opts input, #pv-day-opts input { min-width: 0; margin: 0; }

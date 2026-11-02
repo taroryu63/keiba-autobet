@@ -9,7 +9,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-192.png">
-<link rel="stylesheet" href="style.css?v=7">
+<link rel="stylesheet" href="style.css?v=8">
 <title>競馬自動投票</title>
 </head>
 <body>
@@ -50,8 +50,27 @@
     </section>
 
     <section id="tab-sim" class="tab" hidden>
+      <div class="card">
+        <div class="seg" role="radiogroup">
+          <label><input type="radio" name="pv" value="total" checked><span>トータル</span></label>
+          <label><input type="radio" name="pv" value="day"><span>日付ごと</span></label>
+        </div>
+        <div id="pv-total-opts" class="row">
+          <input id="pv-from" type="date" aria-label="いつから" style="flex:1">
+          <span>〜</span>
+          <input id="pv-to" type="date" aria-label="いつまで" style="flex:1">
+        </div>
+        <div id="pv-day-opts" class="row" hidden>
+          <button id="pv-prev" class="small" aria-label="前の記録の日">◀</button>
+          <input id="pv-day" type="date" aria-label="見る日" style="flex:1">
+          <button id="pv-next" class="small" aria-label="次の記録の日">▶</button>
+        </div>
+        <p id="pv-help" class="muted"></p>
+      </div>
       <div id="pnl-total" class="card"></div>
       <div id="pnl"></div>
+      <div id="sim-total" class="card" hidden></div>
+      <div id="sims"></div>
       <div class="card">
         <h2>仮想収支を計算</h2>
         <p class="muted">やらなかった日の予想を貼ると、レース結果を取り込んで、ルール通りに賭けた場合の収支を計算します。</p>
@@ -60,8 +79,6 @@
         <button id="btn-sim" class="primary">計算する</button>
         <p id="sim-err" class="err"></p>
       </div>
-      <div id="sim-total" class="card" hidden></div>
-      <div id="sims"></div>
     </section>
 
     <section id="tab-settings" class="tab" hidden>
@@ -141,6 +158,6 @@
 
 <dialog id="dlg"><form method="dialog" id="dlg-form"></form></dialog>
 <div id="toast" role="status"></div>
-<script src="app.js?v=9"></script>
+<script src="app.js?v=10"></script>
 </body>
 </html>

@@ -310,57 +310,16 @@ function renderParse() {
   });
 }
 
-// --- 実際の収支（本番で買った分） ---
-async function loadPnl() {
-  const days = await api("/api/pnl");
-  const tot = days.reduce((a, d) => ({ cost: a.cost + d.cost, payout: a.payout + d.payout }), { cost: 0, payout: 0 });
-  $("#pnl-total").innerHTML = `<h2>実際の収支（${days.length}日）</h2>`
-    + (days.length ? `<div class="stats">
-    <div class="stat"><b>${signed(tot.payout - tot.cost)}</b><span>収支</span></div>
-    <div class="stat"><b>${tot.cost ? ((tot.payout / tot.cost) * 100).toFixed(1) : "-"}%</b><span>回収率</span></div>
-    <div class="stat"><b>${yen(tot.cost)}</b><span>購入合計</span></div></div>`
-      : `<p class="muted">本番で買った記録はまだありません。</p>`);
-  $("#pnl").innerHTML = days.map((d) => {
-    const rows = d.rows.map((x) => `<tr><td>${esc(x.venue)}${x.race_no}R<br><span class="muted">${esc(x.post_time)}${x.strategy === "roll" ? " 転がし" : ""}</span></td>`
-      + `<td>${esc(ticketText({ tickets: x.tickets, strategy: "manual", plan: {} }))}</td>`
-      + `<td class="n">${yen(x.cost)}<br>${x.payout === null ? '<span class="muted">結果待ち</span>' : x.payout ? `<span class="pos">${yen(x.payout)}</span>` : ""}</td></tr>`).join("");
-    return `<details class="card"><summary class="row" style="justify-content:space-between">
-        <b>${esc(d.race_date)}</b><span>${signed(d.profit)} <span class="muted">回収率 ${d.roi ?? "-"}%</span></span></summary>
-      <p class="muted">購入 ${yen(d.cost)} / 払戻 ${yen(d.payout)}${d.waiting ? ` / 結果待ち ${d.waiting}件` : ""}</p>
-      <div class="scroll"><table class="list"><tr><th>レース</th><th>買い目</th><th class="n">購入/払戻</th></tr>${rows}</table></div>
-      <div class="row"><button class="small danger" data-pnl-del="${esc(d.race_date)}">この日を削除</button></div>
-    </details>`;
-  }).join("");
+// --- 収支（実際の収支・仮想収支）。トータル／日付ごとに切り替えて見る ---
+const PV = { pnl: [], sims: [] };
+const pvMode = () => document.querySelector('input[name="pv"]:checked').value;
+
+function stats(cost, payout) {
+  return `<div class="stats">
+    <div class="stat"><b>${signed(payout - cost)}</b><span>収支</span></div>
+    <div class="stat"><b>${cost ? ((payout / cost) * 100).toFixed(1) : "-"}%</b><span>回収率</span></div>
+    <div class="stat"><b>${yen(cost)}</b><span>購入合計</span></div></div>`;
 }
-
-$("#pnl").addEventListener("click", async (e) => {
-  const del = e.target.closest("[data-pnl-del]");
-  if (!del || !confirm(`${del.dataset.pnlDel} の実際の収支を一覧から削除しますか？\n（元に戻せません）`)) return;
-  try {
-    await api(`/api/pnl/${del.dataset.pnlDel}`, { method: "DELETE" });
-    await loadPnl();
-  } catch (err) {
-    toast(err.message);
-  }
-});
-
-// --- 仮想収支 ---
-$("#btn-sim").addEventListener("click", async () => {
-  const btn = $("#btn-sim");
-  btn.disabled = true;
-  btn.textContent = "結果を取り込み中…";
-  $("#sim-err").textContent = "";
-  try {
-    await api("/api/sims", { body: { race_date: $("#sim-date").value, text: $("#sim-text").value } });
-    $("#sim-text").value = "";
-    await loadSims();
-  } catch (err) {
-    $("#sim-err").textContent = err.message;
-  } finally {
-    btn.disabled = false;
-    btn.textContent = "計算する";
-  }
-});
 
 // 賭け方ごとの回収率の表（各100円で、その賭け方だけを全レース買った場合）
 function typeTable(list) {
@@ -383,35 +342,124 @@ function sumTypes(sims) {
   return [...m.values()].map((a) => ({ ...a, roi: a.cost ? Math.round((a.payout / a.cost) * 1000) / 10 : null }));
 }
 
-async function loadSims() {
-  const sims = await api("/api/sims");
-  const tot = sims.reduce((a, s) => ({ cost: a.cost + s.report.cost, payout: a.payout + s.report.payout }), { cost: 0, payout: 0 });
-  const box = $("#sim-total");
-  box.hidden = !sims.length;
-  const old = sims.filter((s) => !s.report.by_type).length;
-  box.innerHTML = `<h2>通算（${sims.length}日）</h2><div class="stats">
-    <div class="stat"><b>${signed(tot.payout - tot.cost)}</b><span>収支</span></div>
-    <div class="stat"><b>${tot.cost ? ((tot.payout / tot.cost) * 100).toFixed(1) : "-"}%</b><span>回収率</span></div>
-    <div class="stat"><b>${yen(tot.cost)}</b><span>購入合計</span></div></div>
-    <h2>賭け方ごとの回収率（通算）</h2>${typeTable(sumTypes(sims))}`
-    + (old ? `<p class="muted">${old}日分は賭け方ごとの計算が入っていません。その日の「再計算」を押すと入ります。</p>` : "");
-  $("#sims").innerHTML = sims.map((s) => {
-    const r = s.report;
-    const rows = r.rows.map((x) => `<tr><td>${esc(x.venue)}${x.race_no}R<br><span class="muted">${esc(x.post_time)}${x.kind ? ` ${esc(x.kind)}` : ""}</span></td>`
-      + `<td>${x.tickets.length ? esc(ticketText({ tickets: x.tickets, strategy: "manual", plan: {} })) : ""}`
-      + `${x.note ? `<br><span class="muted">${esc(x.note)}</span>` : ""}</td>`
-      + `<td class="n">${x.cost ? yen(x.cost) : "-"}<br>${x.payout ? `<span class="pos">${yen(x.payout)}</span>` : ""}</td></tr>`).join("");
-    return `<details class="card"><summary class="row" style="justify-content:space-between">
-        <b>${esc(s.race_date)}（${r.holiday ? "土日祝" : "平日"}）</b><span>${signed(r.profit)} <span class="muted">回収率 ${r.roi ?? "-"}%</span></span></summary>
-      <p class="muted">購入 ${yen(r.cost)} / 払戻 ${yen(r.payout)}${r.holiday ? "" : ` / 使った資金 ${yen(r.own)}`}${r.over_limit ? ` / <span class="neg">上限${yen(r.limit)}超え</span>` : ""}</p>
-      ${r.notes && r.notes.length ? `<p class="err">${r.notes.map(esc).join("\n")}</p>` : ""}
-      ${r.by_type ? `<h2>賭け方ごとの回収率</h2>${typeTable(r.by_type)}<h2>ルール通りに賭けた場合</h2>` : ""}
-      <div class="scroll"><table class="list"><tr><th>レース</th><th>買い目</th><th class="n">購入/払戻</th></tr>${rows}</table></div>
-      <div class="row"><button class="small" data-redo="${esc(s.race_date)}">再計算</button><button class="small danger" data-del="${esc(s.race_date)}">削除</button></div>
-      <textarea hidden data-text="${esc(s.race_date)}">${esc(s.text)}</textarea>
-    </details>`;
-  }).join("");
+function pnlDay(d) {
+  const rows = d.rows.map((x) => `<tr><td>${esc(x.venue)}${x.race_no}R<br><span class="muted">${esc(x.post_time)}${x.strategy === "roll" ? " 転がし" : ""}</span></td>`
+    + `<td>${esc(ticketText({ tickets: x.tickets, strategy: "manual", plan: {} }))}</td>`
+    + `<td class="n">${yen(x.cost)}<br>${x.payout === null ? '<span class="muted">結果待ち</span>' : x.payout ? `<span class="pos">${yen(x.payout)}</span>` : ""}</td></tr>`).join("");
+  return `<div class="card"><h2>実際の収支 ${esc(d.race_date)}</h2>${stats(d.cost, d.payout)}
+    <p class="muted">払戻 ${yen(d.payout)}${d.waiting ? ` / 結果待ち ${d.waiting}件` : ""}</p>
+    <div class="scroll"><table class="list"><tr><th>レース</th><th>買い目</th><th class="n">購入/払戻</th></tr>${rows}</table></div>
+    <div class="row"><button class="small danger" data-pnl-del="${esc(d.race_date)}">この日を削除</button></div></div>`;
 }
+
+function simDay(s) {
+  const r = s.report;
+  const rows = r.rows.map((x) => `<tr><td>${esc(x.venue)}${x.race_no}R<br><span class="muted">${esc(x.post_time)}${x.kind ? ` ${esc(x.kind)}` : ""}</span></td>`
+    + `<td>${x.tickets.length ? esc(ticketText({ tickets: x.tickets, strategy: "manual", plan: {} })) : ""}`
+    + `${x.note ? `<br><span class="muted">${esc(x.note)}</span>` : ""}</td>`
+    + `<td class="n">${x.cost ? yen(x.cost) : "-"}<br>${x.payout ? `<span class="pos">${yen(x.payout)}</span>` : ""}</td></tr>`).join("");
+  return `<div class="card"><h2>仮想収支 ${esc(s.race_date)}</h2>${stats(r.cost, r.payout)}
+    <p class="muted">払戻 ${yen(r.payout)} / 使った資金 ${yen(r.own)}${r.over_limit ? ` / <span class="neg">上限${yen(r.limit)}超え</span>` : ""}</p>
+    ${r.notes && r.notes.length ? `<p class="err">${r.notes.map(esc).join("\n")}</p>` : ""}
+    ${r.by_type ? `<h2>賭け方ごとの回収率</h2>${typeTable(r.by_type)}` : `<p class="muted">賭け方ごとの計算は「再計算」を押すと入ります。</p>`}
+    <h2>ルール通りに賭けた場合</h2>
+    <div class="scroll"><table class="list"><tr><th>レース</th><th>買い目</th><th class="n">購入/払戻</th></tr>${rows}</table></div>
+    <div class="row"><button class="small" data-redo="${esc(s.race_date)}">再計算</button><button class="small danger" data-del="${esc(s.race_date)}">削除</button></div>
+    <textarea hidden data-text="${esc(s.race_date)}">${esc(s.text)}</textarea></div>`;
+}
+
+const pvDates = () => [...new Set([...PV.pnl.map((d) => d.race_date), ...PV.sims.map((s) => s.race_date)])].sort();
+
+function renderPv() {
+  const mode = pvMode();
+  $("#pv-total-opts").hidden = mode !== "total";
+  $("#pv-day-opts").hidden = mode !== "day";
+  const pt = $("#pnl-total"), st = $("#sim-total");
+  if (mode === "total") {
+    const from = $("#pv-from").value, to = $("#pv-to").value;
+    const inR = (d) => (!from || d >= from) && (!to || d <= to);
+    const pnl = PV.pnl.filter((d) => inR(d.race_date));
+    const sims = PV.sims.filter((s) => inR(s.race_date));
+    $("#pv-help").textContent = from || to ? "選んだ期間だけを合計しています。" : "全部の日を合計しています。期間を選ぶと、その間だけを合計します。";
+    const pc = pnl.reduce((a, d) => [a[0] + d.cost, a[1] + d.payout], [0, 0]);
+    const sc = sims.reduce((a, s) => [a[0] + s.report.cost, a[1] + s.report.payout], [0, 0]);
+    const old = sims.filter((s) => !s.report.by_type).length;
+    pt.hidden = false;
+    pt.innerHTML = `<h2>実際の収支（${pnl.length}日）</h2>` + (pnl.length ? stats(...pc) : `<p class="muted">本番で買った記録はありません。</p>`);
+    st.hidden = false;
+    st.innerHTML = `<h2>仮想収支（${sims.length}日）</h2>` + (sims.length ? stats(...sc)
+      + `<h2>賭け方ごとの回収率</h2>${typeTable(sumTypes(sims))}`
+      + (old ? `<p class="muted">${old}日分は賭け方ごとの計算が入っていません。「日付ごと」でその日を開いて「再計算」を押すと入ります。</p>` : "")
+      : `<p class="muted">仮想収支の記録はありません。</p>`);
+    $("#pnl").innerHTML = $("#sims").innerHTML = "";
+    return;
+  }
+  const dates = pvDates();
+  if (!$("#pv-day").value && dates.length) $("#pv-day").value = dates[dates.length - 1];
+  const day = $("#pv-day").value;
+  const p = PV.pnl.find((d) => d.race_date === day), s = PV.sims.find((x) => x.race_date === day);
+  $("#pv-help").textContent = dates.length ? `記録のある日：${dates.length}日（◀▶で移動）` : "記録はまだありません。";
+  pt.hidden = st.hidden = true;
+  $("#pnl").innerHTML = p ? pnlDay(p) : "";
+  $("#sims").innerHTML = s ? simDay(s) : "";
+  if (!p && !s) $("#pnl").innerHTML = `<div class="card"><p class="muted">${esc(day || "")} の記録はありません。</p></div>`;
+}
+
+async function loadPnl() {
+  PV.pnl = await api("/api/pnl");
+  renderPv();
+}
+
+async function loadSims() {
+  PV.sims = await api("/api/sims");
+  renderPv();
+}
+
+document.querySelectorAll('input[name="pv"]').forEach((el) => el.addEventListener("change", renderPv));
+["#pv-from", "#pv-to", "#pv-day"].forEach((id) => $(id).addEventListener("change", renderPv));
+function pvStep(dir) {
+  const dates = pvDates(), cur = $("#pv-day").value;
+  const next = dir < 0 ? [...dates].reverse().find((d) => d < cur) : dates.find((d) => d > cur);
+  if (next) { $("#pv-day").value = next; renderPv(); } else toast(dir < 0 ? "これより前の記録はありません" : "これより後の記録はありません");
+}
+$("#pv-prev").addEventListener("click", () => pvStep(-1));
+$("#pv-next").addEventListener("click", () => pvStep(1));
+
+function showDay(d) {
+  document.querySelector('input[name="pv"][value="day"]').checked = true;
+  $("#pv-day").value = d;
+}
+
+$("#pnl").addEventListener("click", async (e) => {
+  const del = e.target.closest("[data-pnl-del]");
+  if (!del || !confirm(`${del.dataset.pnlDel} の実際の収支を一覧から削除しますか？\n（元に戻せません）`)) return;
+  try {
+    await api(`/api/pnl/${del.dataset.pnlDel}`, { method: "DELETE" });
+    await loadPnl();
+  } catch (err) {
+    toast(err.message);
+  }
+});
+
+$("#btn-sim").addEventListener("click", async () => {
+  const btn = $("#btn-sim");
+  btn.disabled = true;
+  btn.textContent = "結果を取り込み中…";
+  $("#sim-err").textContent = "";
+  try {
+    const d = $("#sim-date").value;
+    await api("/api/sims", { body: { race_date: d, text: $("#sim-text").value } });
+    $("#sim-text").value = "";
+    showDay(d);  // 計算した日をすぐ見られるように
+    await loadSims();
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  } catch (err) {
+    $("#sim-err").textContent = err.message;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "計算する";
+  }
+});
 
 $("#sims").addEventListener("click", async (e) => {
   const redo = e.target.closest("[data-redo]");
