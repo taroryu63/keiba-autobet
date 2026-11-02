@@ -122,8 +122,9 @@ function ticketText(o) {
     if (o.strategy === "holiday") {
       const p = o.plan;
       const parts = [];
-      if (p.honmei) parts.push(`単勝◎${p.honmei}`);
+      if (p.honmei && o.org === "jra") parts.push(`単勝◎${p.honmei}`);
       if (p.honmei && p.stars.length) parts.push(`ワイド${p.honmei}-${p.stars.join(".")}`);
+      if (p.honmei && p.stars.length >= 2) parts.push(`3連複${p.honmei}-${p.stars.join(".")}`);
       if (p.stars.length) parts.push(`複勝${p.stars.join(".")}`);
       return parts.join(" / ") + "（金額は投票時に決定）";
     }
