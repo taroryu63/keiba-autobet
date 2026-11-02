@@ -339,7 +339,8 @@ class Runner:
             self.db.update_chain(chain["id"], **upd)
             msg = f"{race_label(o)} {upd['message']}"
             if upd.get("status") in ("won", "exhausted"):
-                self.cancel_rest(o["race_date"], "本日の転がしは終了しました")
+                # 終わるのは転がしだけ。ワイド・3連複・複勝★や中央の予約はそのまま続ける
+                self.cancel_rest(o["race_date"], "本日の転がしは終了しました", strategy="roll")
         elif o["strategy"] == "holiday" and o["plan"].get("tansho"):
             hit = strategy.tansho_hit(o, r)
             chain = self.db.chain_for(o["race_date"], "tansho")
@@ -363,9 +364,11 @@ class Runner:
         notify.send("結果", msg)
         return msg
 
-    def cancel_rest(self, race_date: str, reason: str) -> int:
+    def cancel_rest(self, race_date: str, reason: str, strategy: str | None = None) -> int:
         n = 0
         for x in self.db.list_orders(race_date):
+            if strategy and x["strategy"] != strategy:
+                continue
             if x["status"] in ("queued", "pending", "held", "needs_time"):
                 n += self.db.set_status(x["id"], "cancelled", reason, expect=x["status"])
         return n

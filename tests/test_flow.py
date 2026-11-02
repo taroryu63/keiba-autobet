@@ -233,3 +233,21 @@ def test_paper_votes_not_in_real_pnl(client):
     tick(c, "09:55")
     assert orders(c)[("東京", 1)]["status"] == "done"
     assert c.get("/api/pnl").json() == []
+
+
+def test_roll_end_keeps_other_bets(client):
+    """転がしが終わっても、ワイド・3連複・複勝★の予約は取り消さない。"""
+    c = client
+    c.clock["now"] = datetime(2026, 11, 2, 8, 0, tzinfo=JST)
+    c.put("/api/settings", json={"mode": "live", "roll_budget": 500})
+    text = "大井\n1R 15:00 ◎1\n2R 16:00 ◎4 ★5.6\n"
+    assert c.post("/api/bulk", json={"race_date": "2026-11-02", "text": text}).json()["created"] == 3
+    c.race_list[("大井", 1)] = {"race_id": "大井1", "post_time": ""}
+    tick(c, "14:55")
+    settle(c, "大井", 1, winner=2)  # 外れ → 資金切れで転がし終了
+    tick(c, "15:10")
+    o = by_strategy(c, "2026-11-02")
+    assert o[("大井", 2, "roll")]["status"] == "cancelled"
+    assert o[("大井", 2, "holiday")]["status"] == "queued"
+    tick(c, "15:55")
+    assert [t["bet_type"] for t in FakeBot.votes[-1][3]] == ["ワイド", "ワイド", "3連複", "複勝", "複勝"]
