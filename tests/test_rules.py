@@ -275,3 +275,22 @@ def test_sim_budget_over_is_marked():
     res = {("東京", n): _res(1, {1: 3.0}) for n in range(1, 9)}
     rep = simulate("2026-10-25", races, res, S)  # 1レース1,000円×8＝8,000円 > 7,000円
     assert rep["over_limit"] and "予算超え" in rep["rows"][7]["note"]
+
+
+def test_sim_by_type():
+    """賭け方ごとの回収率（各100円）。◎→★の3連単・馬単は◎1着固定。"""
+    r = RaceResult(settled=True, ranks={1: 1, 2: 2, 3: 3})
+    r.pay = {"単勝": {(1,): 300}, "複勝": {(1,): 120, (2,): 150, (3,): 200},
+             "ワイド": {(1, 2): 250, (1, 3): 400, (2, 3): 600}, "馬連": {(1, 2): 700},
+             "馬単": {(1, 2): 1100}, "3連複": {(1, 2, 3): 900}, "3連単": {(1, 2, 3): 3000}}
+    races = [{"org": "nar", "venue": "大井", "race_no": 1, "post_time": "15:00", "honmei": 1, "stars": [2, 3, 4]},
+             {"org": "nar", "venue": "大井", "race_no": 2, "post_time": "15:30", "honmei": None, "stars": [5]}]
+    rep = simulate("2026-11-02", races, {("大井", 1): r, ("大井", 2): RaceResult(settled=True, pay={"単勝": {(9,): 500}})}, S)
+    t = {x["label"]: x for x in rep["by_type"]}
+    assert (t["◎単勝"]["points"], t["◎単勝"]["payout"], t["◎単勝"]["roi"]) == (1, 300, 300.0)
+    assert (t["★複勝"]["points"], t["★複勝"]["payout"], t["★複勝"]["races"]) == (4, 350, 2)
+    assert (t["◎→★3連単"]["points"], t["◎→★3連単"]["payout"]) == (6, 3000)
+    assert (t["◎→★3連複"]["points"], t["◎→★3連複"]["payout"]) == (3, 900)
+    assert (t["◎→★ワイド"]["points"], t["◎→★ワイド"]["payout"]) == (3, 650)
+    assert (t["◎→★馬単"]["points"], t["◎→★馬単"]["payout"]) == (3, 1100)
+    assert (t["◎→★馬連"]["points"], t["◎→★馬連"]["payout"], t["◎→★馬連"]["hits"]) == (3, 700, 1)

@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+from itertools import combinations, permutations
 
 from . import strategy
 from .betting import Ticket
@@ -55,7 +56,53 @@ def simulate(race_date: str, races: list[dict], results: dict, settings: dict) -
         "profit": payout - cost,
         "roi": round(payout / cost * 100, 1) if cost else None,
         "limit": settings["bet_limit"], "over_limit": over,
+        "by_type": by_type(races, results),
     }
+
+
+# 賭け方ごとの回収率（ルールとは別に、各100円で全レース買った場合）
+BY_TYPE = [
+    ("◎単勝", "単勝"), ("◎複勝", "複勝"), ("★複勝", "複勝"), ("◎→★3連単", "3連単"),
+    ("◎→★3連複", "3連複"), ("◎→★ワイド", "ワイド"), ("◎→★馬単", "馬単"), ("◎→★馬連", "馬連"),
+]
+
+
+def type_combos(label: str, h: int | None, stars: list[int]) -> list[tuple[int, ...]]:
+    """その賭け方で買う組番。◎→★の3連単・馬単は◎を1着に固定する。"""
+    st = sorted(x for x in stars if x != h)
+    if label == "★複勝":
+        return [(x,) for x in st]
+    if h is None:
+        return []
+    if label in ("◎単勝", "◎複勝"):
+        return [(h,)]
+    if label == "◎→★3連単":
+        return [(h, a, b) for a, b in permutations(st, 2)]
+    if label == "◎→★3連複":
+        return [tuple(sorted((h, a, b))) for a, b in combinations(st, 2)]
+    if label == "◎→★馬単":
+        return [(h, x) for x in st]
+    return [tuple(sorted((h, x))) for x in st]  # ワイド・馬連
+
+
+def by_type(races: list[dict], results: dict) -> list[dict]:
+    out = []
+    for label, bet in BY_TYPE:
+        races_n = points = payout = hits = 0
+        for r in races:
+            res: RaceResult | None = results.get((r["venue"], r["race_no"]))
+            combos = type_combos(label, r.get("honmei"), r.get("stars", []))
+            if not res or not res.settled or not combos:
+                continue
+            got = sum(res.pay.get(bet, {}).get(c, 0) for c in combos)
+            races_n += 1
+            points += len(combos)
+            payout += got
+            hits += got > 0
+        cost = points * 100
+        out.append({"label": label, "races": races_n, "points": points, "cost": cost, "payout": payout,
+                    "hits": hits, "roi": round(payout / cost * 100, 1) if cost else None})
+    return out
 
 
 def simulate_bets(races: list[dict], results: dict, s: dict, with_tansho: bool) -> list[dict]:

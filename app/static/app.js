@@ -362,15 +362,39 @@ $("#btn-sim").addEventListener("click", async () => {
   }
 });
 
+// 賭け方ごとの回収率の表（各100円で、その賭け方だけを全レース買った場合）
+function typeTable(list) {
+  if (!list || !list.length) return "";
+  return `<div class="scroll"><table class="list"><tr><th>賭け方</th><th class="n">回収率</th><th class="n">的中</th><th class="n">購入/払戻</th></tr>`
+    + list.map((x) => `<tr><td>${esc(x.label)}<br><span class="muted">${x.points}点</span></td>`
+      + `<td class="n"><b class="${x.roi >= 100 ? "pos" : ""}">${x.roi ?? "-"}${x.roi != null ? "%" : ""}</b></td>`
+      + `<td class="n">${x.hits}/${x.races}R</td>`
+      + `<td class="n">${yen(x.cost)}<br>${x.payout ? `<span class="pos">${yen(x.payout)}</span>` : "0円"}</td></tr>`).join("")
+    + `</table></div><p class="muted">ルールとは別に、各100円でその賭け方だけを買った場合です。3連単・馬単は◎を1着に固定。</p>`;
+}
+
+function sumTypes(sims) {
+  const m = new Map();
+  for (const s of sims) for (const x of s.report.by_type || []) {
+    const a = m.get(x.label) || { label: x.label, races: 0, points: 0, cost: 0, payout: 0, hits: 0 };
+    for (const k of ["races", "points", "cost", "payout", "hits"]) a[k] += x[k];
+    m.set(x.label, a);
+  }
+  return [...m.values()].map((a) => ({ ...a, roi: a.cost ? Math.round((a.payout / a.cost) * 1000) / 10 : null }));
+}
+
 async function loadSims() {
   const sims = await api("/api/sims");
   const tot = sims.reduce((a, s) => ({ cost: a.cost + s.report.cost, payout: a.payout + s.report.payout }), { cost: 0, payout: 0 });
   const box = $("#sim-total");
   box.hidden = !sims.length;
+  const old = sims.filter((s) => !s.report.by_type).length;
   box.innerHTML = `<h2>通算（${sims.length}日）</h2><div class="stats">
     <div class="stat"><b>${signed(tot.payout - tot.cost)}</b><span>収支</span></div>
     <div class="stat"><b>${tot.cost ? ((tot.payout / tot.cost) * 100).toFixed(1) : "-"}%</b><span>回収率</span></div>
-    <div class="stat"><b>${yen(tot.cost)}</b><span>購入合計</span></div></div>`;
+    <div class="stat"><b>${yen(tot.cost)}</b><span>購入合計</span></div></div>
+    <h2>賭け方ごとの回収率（通算）</h2>${typeTable(sumTypes(sims))}`
+    + (old ? `<p class="muted">${old}日分は賭け方ごとの計算が入っていません。その日の「再計算」を押すと入ります。</p>` : "");
   $("#sims").innerHTML = sims.map((s) => {
     const r = s.report;
     const rows = r.rows.map((x) => `<tr><td>${esc(x.venue)}${x.race_no}R<br><span class="muted">${esc(x.post_time)}${x.kind ? ` ${esc(x.kind)}` : ""}</span></td>`
@@ -381,6 +405,7 @@ async function loadSims() {
         <b>${esc(s.race_date)}（${r.holiday ? "土日祝" : "平日"}）</b><span>${signed(r.profit)} <span class="muted">回収率 ${r.roi ?? "-"}%</span></span></summary>
       <p class="muted">購入 ${yen(r.cost)} / 払戻 ${yen(r.payout)}${r.holiday ? "" : ` / 使った資金 ${yen(r.own)}`}${r.over_limit ? ` / <span class="neg">上限${yen(r.limit)}超え</span>` : ""}</p>
       ${r.notes && r.notes.length ? `<p class="err">${r.notes.map(esc).join("\n")}</p>` : ""}
+      ${r.by_type ? `<h2>賭け方ごとの回収率</h2>${typeTable(r.by_type)}<h2>ルール通りに賭けた場合</h2>` : ""}
       <div class="scroll"><table class="list"><tr><th>レース</th><th>買い目</th><th class="n">購入/払戻</th></tr>${rows}</table></div>
       <div class="row"><button class="small" data-redo="${esc(s.race_date)}">再計算</button><button class="small danger" data-del="${esc(s.race_date)}">削除</button></div>
       <textarea hidden data-text="${esc(s.race_date)}">${esc(s.text)}</textarea>
