@@ -1,6 +1,6 @@
 // 画面の部品だけをキャッシュする（APIの結果はキャッシュしない）。
 // 更新がすぐ届くよう、毎回サーバーに確認し、つながらないときだけキャッシュを使う。
-const CACHE = "keiba-v2";
+const CACHE = "keiba-v3";
 const SHELL = ["/", "/index.html", "/style.css", "/app.js", "/icon.svg", "/manifest.webmanifest"];
 self.addEventListener("install", (e) => {
   self.skipWaiting();

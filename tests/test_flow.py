@@ -195,3 +195,41 @@ def test_off_mode_does_not_use_browser(client):
     tick(c, "09:55")
     o = orders(c)[("東京", 1)]
     assert o["status"] == "done" and o["plan"]["paper"] and FakeBot.votes == []
+
+
+def test_cancel_all_and_real_pnl(client):
+    """予約の全取消と、本番で買った分の実収支（日ごとに削除できる）。"""
+    c = client
+    c.put("/api/settings", json={"mode": "live"})
+    text = "東京\n1R ◎1 ★2.3\n2R ★7\n3R ★8\n"
+    assert c.post("/api/bulk", json={"race_date": "2026-11-01", "text": text}).json()["created"] == 3
+    for n, t in [(1, "10:00"), (2, "10:30"), (3, "11:00")]:
+        c.race_list[("東京", n)] = {"race_id": f"東京{n}", "post_time": t}
+    tick(c, "09:55")  # 1R を買う
+    settle(c, "東京", 1, winner=2, fuku={(2,): 150}, wide={(1, 2): 400})
+    tick(c, "10:10")
+
+    r = c.post("/api/orders/cancel_all", json={"race_date": "2026-11-01"}).json()
+    assert r["cancelled"] == 2
+    st = {k: o["status"] for k, o in orders(c).items()}
+    assert st == {("東京", 1): "done", ("東京", 2): "cancelled", ("東京", 3): "cancelled"}
+    # 取り消したレースは入れ直せる
+    assert c.post("/api/bulk", json={"race_date": "2026-11-01", "text": "東京\n2R ◎4 ★7\n"}).json()["created"] == 1
+
+    pnl = c.get("/api/pnl").json()
+    assert len(pnl) == 1 and pnl[0]["race_date"] == "2026-11-01"
+    assert pnl[0]["cost"] == 600 and pnl[0]["payout"] == 550 and pnl[0]["profit"] == -50
+
+    assert c.delete("/api/pnl/2026-11-01").status_code == 200
+    assert c.get("/api/pnl").json() == []
+    assert orders(c)[("東京", 1)]["status"] == "done"  # 購入の記録は残る
+
+
+def test_paper_votes_not_in_real_pnl(client):
+    c = client
+    c.put("/api/settings", json={"mode": "off"})
+    c.post("/api/bulk", json={"race_date": "2026-11-01", "text": "東京\n1R ★2\n"})
+    c.race_list[("東京", 1)] = {"race_id": "東京1", "post_time": "10:00"}
+    tick(c, "09:55")
+    assert orders(c)[("東京", 1)]["status"] == "done"
+    assert c.get("/api/pnl").json() == []

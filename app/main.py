@@ -372,6 +372,38 @@ def cancel(oid: int):
     return {"ok": True}
 
 
+class DateIn(BaseModel):
+    race_date: str
+
+
+@app.post("/api/orders/cancel_all", dependencies=[Depends(auth)])
+async def cancel_all(body: DateIn):
+    """その日の、まだ投票していない予約を全部取り消す（投票中・投票済みはそのまま）。"""
+    try:
+        date.fromisoformat(body.race_date)
+    except ValueError:
+        raise HTTPException(400, "日付が不正です")
+    async with state["runner"]._lock:
+        n = db().cancel_all(body.race_date)
+    return {"ok": True, "cancelled": n}
+
+
+# --- 実際の収支 ---
+@app.get("/api/pnl", dependencies=[Depends(auth)])
+def real_pnl():
+    return db().real_pnl()
+
+
+@app.delete("/api/pnl/{race_date}", dependencies=[Depends(auth)])
+def delete_pnl(race_date: str):
+    try:
+        date.fromisoformat(race_date)
+    except ValueError:
+        raise HTTPException(400, "日付が不正です")
+    db().hide_pnl(race_date)
+    return {"ok": True}
+
+
 @app.post("/api/orders/{oid}/approve", dependencies=[Depends(auth)])
 def approve(oid: int):
     """上限を超えて保留になった買い目を、上限を超えても買う。"""

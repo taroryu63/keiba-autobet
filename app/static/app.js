@@ -67,7 +67,7 @@ document.querySelectorAll(".tabs button").forEach((b) =>
   b.addEventListener("click", () => {
     document.querySelectorAll(".tabs button").forEach((x) => x.classList.toggle("on", x === b));
     document.querySelectorAll(".tab").forEach((t) => (t.hidden = t.id !== `tab-${b.dataset.tab}`));
-    if (b.dataset.tab === "sim") loadSims();
+    if (b.dataset.tab === "sim") { loadPnl().catch((e) => toast(e.message)); loadSims(); }
     if (b.dataset.tab === "settings") loadLogs();
   })
 );
@@ -136,8 +136,23 @@ function ticketText(o) {
   return Object.entries(groups).map(([k, v]) => `${k.split(" ")[0]} ${v.join(", ")}（各${k.split(" ")[1]}）`).join(" / ");
 }
 
+const CANCELABLE = ["needs_time", "queued", "pending", "held"];
+
+$("#btn-cancel-all").addEventListener("click", async () => {
+  const n = S.orders.filter((o) => CANCELABLE.includes(o.status)).length;
+  if (!confirm(`${S.day.date} のまだ投票していない予約 ${n}件を全部取り消しますか？\n（投票中・投票済みのものはそのままです）`)) return;
+  try {
+    const r = await api("/api/orders/cancel_all", { body: { race_date: S.day.date } });
+    toast(`${r.cancelled}件を取り消しました`);
+    await load();
+  } catch (err) {
+    toast(err.message);
+  }
+});
+
 function renderOrders() {
   const list = S.orders;
+  $("#btn-cancel-all").hidden = !list.some((o) => CANCELABLE.includes(o.status));
   if (!list.length) {
     $("#orders").innerHTML = `<p class="muted">この日の予約はありません。</p>`;
     return;
@@ -265,6 +280,40 @@ function renderParse() {
     }
   });
 }
+
+// --- 実際の収支（本番で買った分） ---
+async function loadPnl() {
+  const days = await api("/api/pnl");
+  const tot = days.reduce((a, d) => ({ cost: a.cost + d.cost, payout: a.payout + d.payout }), { cost: 0, payout: 0 });
+  $("#pnl-total").innerHTML = `<h2>実際の収支（${days.length}日）</h2>`
+    + (days.length ? `<div class="stats">
+    <div class="stat"><b>${signed(tot.payout - tot.cost)}</b><span>収支</span></div>
+    <div class="stat"><b>${tot.cost ? ((tot.payout / tot.cost) * 100).toFixed(1) : "-"}%</b><span>回収率</span></div>
+    <div class="stat"><b>${yen(tot.cost)}</b><span>購入合計</span></div></div>`
+      : `<p class="muted">本番で買った記録はまだありません。</p>`);
+  $("#pnl").innerHTML = days.map((d) => {
+    const rows = d.rows.map((x) => `<tr><td>${esc(x.venue)}${x.race_no}R<br><span class="muted">${esc(x.post_time)}${x.strategy === "roll" ? " 転がし" : ""}</span></td>`
+      + `<td>${esc(ticketText({ tickets: x.tickets, strategy: "manual", plan: {} }))}</td>`
+      + `<td class="n">${yen(x.cost)}<br>${x.payout === null ? '<span class="muted">結果待ち</span>' : x.payout ? `<span class="pos">${yen(x.payout)}</span>` : ""}</td></tr>`).join("");
+    return `<details class="card"><summary class="row" style="justify-content:space-between">
+        <b>${esc(d.race_date)}</b><span>${signed(d.profit)} <span class="muted">回収率 ${d.roi ?? "-"}%</span></span></summary>
+      <p class="muted">購入 ${yen(d.cost)} / 払戻 ${yen(d.payout)}${d.waiting ? ` / 結果待ち ${d.waiting}件` : ""}</p>
+      <div class="scroll"><table class="list"><tr><th>レース</th><th>買い目</th><th class="n">購入/払戻</th></tr>${rows}</table></div>
+      <div class="row"><button class="small danger" data-pnl-del="${esc(d.race_date)}">この日を削除</button></div>
+    </details>`;
+  }).join("");
+}
+
+$("#pnl").addEventListener("click", async (e) => {
+  const del = e.target.closest("[data-pnl-del]");
+  if (!del || !confirm(`${del.dataset.pnlDel} の実際の収支を一覧から削除しますか？\n（元に戻せません）`)) return;
+  try {
+    await api(`/api/pnl/${del.dataset.pnlDel}`, { method: "DELETE" });
+    await loadPnl();
+  } catch (err) {
+    toast(err.message);
+  }
+});
 
 // --- 仮想収支 ---
 $("#btn-sim").addEventListener("click", async () => {

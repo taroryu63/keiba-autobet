@@ -12,6 +12,8 @@ from .config import JST
 
 # 予算に数える状態（予約中・投票中・投票済み・結果不明）
 COUNTED = ("pending", "voting", "done", "unknown")
+# まだ投票していないので取り消せる状態
+CANCELABLE = ("queued", "pending", "held", "needs_time")
 
 DEFAULT_SETTINGS = {
     "mode": "off",           # off=ブラウザを使わない練習 / rehearsal=購入直前まで / live=本番
@@ -111,6 +113,9 @@ class DB:
         self._lock = threading.Lock()
         with self.conn() as c:
             c.executescript(SCHEMA)
+            cols = {r[1] for r in c.execute("PRAGMA table_info(orders)")}
+            if "pnl_hidden" not in cols:  # 実収支の一覧から消した買い目（購入の記録は残す）
+                c.execute("ALTER TABLE orders ADD COLUMN pnl_hidden INTEGER NOT NULL DEFAULT 0")
 
     @contextmanager
     def conn(self):
@@ -291,6 +296,46 @@ class DB:
         with self.conn() as c:
             c.execute(f"UPDATE chains SET {cols}, updated_at=? WHERE id=?",
                       (*fields.values(), now_iso(), chain_id))
+
+    def cancel_all(self, race_date: str) -> int:
+        """その日の、まだ投票していない予約をまとめて取り消す。取り消した数を返す。"""
+        with self.conn() as c:
+            return c.execute(
+                f"UPDATE orders SET status='cancelled', message='まとめて取り消しました', updated_at=?"
+                f" WHERE race_date=? AND status IN ({','.join('?' * len(CANCELABLE))})",
+                (now_iso(), race_date, *CANCELABLE),
+            ).rowcount
+
+    # --- 実際の収支（本番で買った分） ---
+    def real_pnl(self) -> list[dict]:
+        """本番で投票した買い目を日ごとにまとめる。練習モードの分は含めない。"""
+        with self.conn() as c:
+            rows = c.execute(
+                "SELECT * FROM orders WHERE status='done' AND pnl_hidden=0 ORDER BY race_date DESC, post_time, id"
+            ).fetchall()
+        days: dict[str, dict] = {}
+        for r in map(_row, rows):
+            if r["plan"].get("paper") or not r["total"]:
+                continue
+            d = days.setdefault(r["race_date"], {"race_date": r["race_date"], "cost": 0, "payout": 0,
+                                                 "waiting": 0, "rows": []})
+            d["cost"] += r["total"]
+            d["payout"] += r["payout"] or 0
+            d["waiting"] += r["payout"] is None
+            d["rows"].append({"org": r["org"], "venue": r["venue"], "race_no": r["race_no"],
+                              "post_time": r["post_time"], "strategy": r["strategy"],
+                              "tickets": r["tickets"], "cost": r["total"], "payout": r["payout"]})
+        out = list(days.values())
+        for d in out:
+            d["profit"] = d["payout"] - d["cost"]
+            d["roi"] = round(d["payout"] / d["cost"] * 100, 1) if d["cost"] else None
+        return out
+
+    def hide_pnl(self, race_date: str) -> int:
+        """その日の実収支を一覧から消す（投票の記録や予算の計算には影響しない）。"""
+        with self.conn() as c:
+            return c.execute("UPDATE orders SET pnl_hidden=1 WHERE race_date=? AND status='done'",
+                             (race_date,)).rowcount
 
     # --- 仮想収支 ---
     def save_sim(self, race_date: str, text: str, report: dict) -> None:
