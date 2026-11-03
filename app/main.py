@@ -531,6 +531,34 @@ async def check_site(body: CheckIn):
     return {"steps": steps, "ok": all(x["ok"] for x in steps) and {"confirm", "many"} <= {x["stage"] for x in steps}}
 
 
+# --- レース映像 ---
+# 中央：netkeibaの映像ページ（無料）。地方：netkeibaは有料会員だけなので、SPAT4の映像ページを開く
+SPAT4_MOVIE_URL = ""  # SPAT4の映像ページ（調査中。分かったらここに入れる）
+
+
+@app.get("/api/movie", dependencies=[Depends(auth)])
+async def movie(org: str, race_date: str, venue: str, race_no: int):
+    """そのレースの映像ページのURLを返す。"""
+    if org not in VENUES or venue not in VENUES[org]:
+        raise HTTPException(400, "開催場が不正です")
+    try:
+        date.fromisoformat(race_date)
+    except ValueError:
+        raise HTTPException(400, "日付が不正です")
+    if org == "nar" and SPAT4_MOVIE_URL:
+        return {"url": SPAT4_MOVIE_URL, "note": "SPAT4にログインしたうえで見られます"}
+    try:
+        lst = await asyncio.to_thread(results.race_list, org, race_date, VENUES[org])
+    except Exception as e:
+        raise HTTPException(502, f"レース一覧を取得できません: {e}")
+    info = lst.get((venue, race_no))
+    if not info:
+        raise HTTPException(404, f"{venue}{race_no}R がnetkeibaのレース一覧に見つかりません")
+    url = f"{results.HOSTS[org]}/race/movie.html?race_id={info['race_id']}"
+    note = "" if org == "jra" else "地方の映像はnetkeibaの有料会員向けです"
+    return {"url": url, "note": note}
+
+
 @app.get("/api/logs", dependencies=[Depends(auth)])
 def logs():
     return db().logs(100)

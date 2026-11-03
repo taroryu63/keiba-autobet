@@ -266,3 +266,11 @@ def test_settings_turn_off_tansho_and_roll(client):
     assert o[("大井", 1, "roll")]["status"] == "cancelled"
     assert [t["bet_type"] for t in FakeBot.votes[-1][3]] == ["ワイド", "ワイド", "馬連", "馬連", "複勝", "複勝"]
     assert len(FakeBot.votes) == 1
+
+
+def test_movie_url(client):
+    c = client
+    c.race_list[("東京", 11)] = {"race_id": "202605041111", "post_time": "15:40"}
+    r = c.get("/api/movie", params={"org": "jra", "race_date": "2026-11-01", "venue": "東京", "race_no": 11})
+    assert r.json()["url"] == "https://race.netkeiba.com/race/movie.html?race_id=202605041111"
+    assert c.get("/api/movie", params={"org": "jra", "race_date": "2026-11-01", "venue": "東京", "race_no": 12}).status_code == 404

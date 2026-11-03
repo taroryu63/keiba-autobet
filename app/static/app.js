@@ -175,16 +175,34 @@ function renderOrders() {
   for (const o of list) {
     const key = `${o.venue}|${o.race_no}`;
     let g = groups.find((x) => x.key === key);
-    if (!g) groups.push((g = { key, venue: o.venue, race_no: o.race_no, post_time: o.post_time, items: [] }));
+    if (!g) groups.push((g = { key, org: o.org, venue: o.venue, race_no: o.race_no, post_time: o.post_time, items: [] }));
     g.items.push(o);
   }
   $("#orders").innerHTML = toggle + groups.map((g) => `<div class="order">
-      <div class="head"><span class="race">${esc(g.venue)}${g.race_no}R <span class="muted">${esc(g.post_time || "--:--")}</span></span></div>
+      <div class="head"><span class="race">${esc(g.venue)}${g.race_no}R <span class="muted">${esc(g.post_time || "--:--")}</span></span>
+        <button class="small" data-movie="${esc(g.org)}|${esc(g.venue)}|${g.race_no}">▶ 映像</button></div>
       ${g.items.map(orderItem).join("")}
     </div>`).join("");
 }
 
+// レース映像：アプリの中の小さなブラウザで開く（サイトが埋め込みを断るときは、ふつうのブラウザで開く）
+async function openMovie(org, venue, raceNo) {
+  try {
+    const m = await api(`/api/movie?org=${org}&race_date=${encodeURIComponent(S.day.date)}&venue=${encodeURIComponent(venue)}&race_no=${raceNo}`);
+    $("#mv-title").textContent = `${venue}${raceNo}R のレース映像`;
+    $("#mv-note").textContent = (m.note ? m.note + "。" : "") + "映らないときは「ブラウザで開く」を押してください。";
+    $("#mv-open").href = m.url;
+    $("#mv-frame").src = m.url;
+    $("#mv").showModal();
+  } catch (err) {
+    toast(err.message);
+  }
+}
+$("#mv-close").addEventListener("click", () => { $("#mv-frame").src = "about:blank"; $("#mv").close(); });
+
 $("#orders").addEventListener("click", (e) => {
+  const mv = e.target.closest("[data-movie]");
+  if (mv) { const [org, venue, no] = mv.dataset.movie.split("|"); openMovie(org, venue, Number(no)); return; }
   if (e.target.id !== "btn-show-hidden") return;
   showHidden = !showHidden;
   renderOrders();

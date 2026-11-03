@@ -9,7 +9,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-192.png">
-<link rel="stylesheet" href="style.css?v=8">
+<link rel="stylesheet" href="style.css?v=9">
 <title>競馬自動投票</title>
 </head>
 <body>
@@ -169,7 +169,13 @@
 </div>
 
 <dialog id="dlg"><form method="dialog" id="dlg-form"></form></dialog>
+<dialog id="mv" class="movie">
+  <div class="row" style="justify-content:space-between"><b id="mv-title"></b><button id="mv-close" class="small">閉じる</button></div>
+  <iframe id="mv-frame" title="レース映像" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen referrerpolicy="no-referrer-when-downgrade"></iframe>
+  <p id="mv-note" class="muted"></p>
+  <a id="mv-open" class="small" target="_blank" rel="noopener">ブラウザで開く</a>
+</dialog>
 <div id="toast" role="status"></div>
-<script src="app.js?v=11"></script>
+<script src="app.js?v=12"></script>
 </body>
 </html>
