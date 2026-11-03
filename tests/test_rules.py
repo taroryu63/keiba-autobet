@@ -313,3 +313,19 @@ def test_bet_types_follow_settings():
     assert strategy.plans_for("nar", 1, [2], off) == ["holiday"]
     assert strategy.plans_for("jra", 1, [], off) == []
     assert strategy.plans_for("nar", 1, [], S) == ["roll"]
+
+
+def test_nar_movie(monkeypatch):
+    from app import results
+    pages = {
+        "https://www.keiba.go.jp/KeibaWeb/TodayRaceInfo/RaceList?k_raceDate=2026%2F11%2F02&k_babaCode=10":
+            '<a href="http://keiba-lv-st.jp/movie/player?date=20261102&amp;race=1&amp;track=morioka">映像</a>',
+        "http://keiba-lv-st.jp/movie/player?date=20261102&race=3&track=morioka":
+            'var x = {"hlsAbr":"https:\\/\\/movie.example\\/a\\/2026110210003_https.m3u8"};',
+    }
+    monkeypatch.setattr(results, "fetch", lambda url, ttl=60: pages[url])
+    m = results.nar_movie("2026-11-02", "盛岡", 3)
+    assert m == {"page": "http://keiba-lv-st.jp/movie/player?date=20261102&race=3&track=morioka",
+                 "hls": "https://movie.example/a/2026110210003_https.m3u8"}
+    with pytest.raises(LookupError):
+        results.nar_movie("2026-11-02", "東京", 1)

@@ -532,8 +532,7 @@ async def check_site(body: CheckIn):
 
 
 # --- レース映像 ---
-# 中央：netkeibaの映像ページ（無料）。地方：netkeibaは有料会員だけなので、SPAT4の映像ページを開く
-SPAT4_MOVIE_URL = ""  # SPAT4の映像ページ（調査中。分かったらここに入れる）
+# 中央：netkeibaの映像ページ（無料）。地方：netkeibaは有料会員だけなので、地方競馬の公式サイトの映像
 
 
 @app.get("/api/movie", dependencies=[Depends(auth)])
@@ -545,8 +544,14 @@ async def movie(org: str, race_date: str, venue: str, race_no: int):
         date.fromisoformat(race_date)
     except ValueError:
         raise HTTPException(400, "日付が不正です")
-    if org == "nar" and SPAT4_MOVIE_URL:
-        return {"url": SPAT4_MOVIE_URL, "note": "SPAT4にログインしたうえで見られます"}
+    if org == "nar":
+        try:
+            m = await asyncio.to_thread(results.nar_movie, race_date, venue, race_no)
+        except LookupError as e:
+            raise HTTPException(404, str(e))
+        except Exception as e:
+            raise HTTPException(502, f"地方競馬の公式サイトを読めません: {e}")
+        return {"url": m["page"], "hls": m["hls"], "note": "地方競馬の公式サイトの映像です"}
     try:
         lst = await asyncio.to_thread(results.race_list, org, race_date, VENUES[org])
     except Exception as e:

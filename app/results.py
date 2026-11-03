@@ -154,6 +154,36 @@ def parse_result(html: str) -> RaceResult:
     return res
 
 
+# --- 地方のレース映像（地方競馬の公式サイト keiba.go.jp。無料・ログイン不要） ---
+# 公式サイトの場コード（2026/11 に盛岡・船橋・帯広・笠松・金沢・園田・門別で確認。ほかは同じ表の値）
+NAR_BABA = {"帯広": 3, "門別": 36, "盛岡": 10, "水沢": 11, "浦和": 18, "船橋": 19, "大井": 20, "川崎": 21,
+            "金沢": 22, "笠松": 23, "名古屋": 24, "園田": 27, "姫路": 28, "高知": 31, "佐賀": 32}
+PLAYER_RE = re.compile(r"https?://keiba-lv-st\.jp/movie/player\?date=(\d{8})(?:&amp;|&)race=(\d+)(?:&amp;|&)track=(\w+)")
+HLS_RE = re.compile(r'"hlsAbr"\s*:\s*"([^"]+\.m3u8)"')
+
+
+def nar_movie(race_date: str, venue: str, race_no: int) -> dict:
+    """{"page": 映像ページ, "hls": 動画（m3u8）か None}。見つからなければ LookupError。"""
+    code = NAR_BABA.get(venue)
+    if code is None:
+        raise LookupError(f"{venue} の映像の場所が分かりません")
+    y, m, d = race_date.split("-")
+    url = f"https://www.keiba.go.jp/KeibaWeb/TodayRaceInfo/RaceList?k_raceDate={y}%2F{m}%2F{d}&k_babaCode={code}"
+    found = PLAYER_RE.findall(fetch(url, ttl=600))
+    track = next((t for dt, r, t in found if int(r) == race_no), None) or (found[0][2] if found else None)
+    if not track:
+        raise LookupError(f"{venue}{race_no}R の映像はまだ公開されていません")
+    page = f"http://keiba-lv-st.jp/movie/player?date={y}{m}{d}&race={race_no}&track={track}"
+    hls = None
+    try:
+        h = HLS_RE.search(fetch(page, ttl=300))
+        if h:
+            hls = h.group(1).replace("\\/", "/")
+    except Exception as e:
+        log.warning("映像ページを読めません: %s", e)
+    return {"page": page, "hls": hls}
+
+
 def race_list(org: str, race_date: str, venues: list[str]) -> dict[tuple[str, int], dict]:
     url = f"{HOSTS[org]}/top/race_list_sub.html?kaisai_date={race_date.replace('-', '')}"
     return parse_race_list(fetch(url, ttl=600), venues)

@@ -185,6 +185,30 @@ function renderOrders() {
     </div>`).join("");
 }
 
+// Androidなど、m3u8をそのまま再生できないブラウザ用に hls.js を読み込む
+let hlsObj = null;
+async function hlsPlay(video, src) {
+  try {
+    if (!window.Hls) await new Promise((ok, ng) => {
+      const sc = document.createElement("script");
+      sc.src = "https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.13/hls.min.js";
+      sc.onload = ok; sc.onerror = ng; document.head.appendChild(sc);
+    });
+    if (!window.Hls.isSupported()) return false;
+    if (hlsObj) hlsObj.destroy();
+    hlsObj = new window.Hls();
+    return await new Promise((ok) => {
+      hlsObj.on(window.Hls.Events.MANIFEST_PARSED, () => ok(true));
+      hlsObj.on(window.Hls.Events.ERROR, (_, d) => { if (d.fatal) ok(false); });
+      hlsObj.loadSource(src);
+      hlsObj.attachMedia(video);
+      setTimeout(() => ok(false), 8000);
+    });
+  } catch {
+    return false;
+  }
+}
+
 // レース映像：アプリの中の小さなブラウザで開く（サイトが埋め込みを断るときは、ふつうのブラウザで開く）
 async function openMovie(org, venue, raceNo) {
   try {
@@ -192,13 +216,29 @@ async function openMovie(org, venue, raceNo) {
     $("#mv-title").textContent = `${venue}${raceNo}R のレース映像`;
     $("#mv-note").textContent = (m.note ? m.note + "。" : "") + "映らないときは「ブラウザで開く」を押してください。";
     $("#mv-open").href = m.url;
-    $("#mv-frame").src = m.url;
+    const v = $("#mv-video"), f = $("#mv-frame");
+    // 動画（m3u8）が分かれば、アプリの中の動画プレーヤーで直接再生する。分からなければページを開く
+    const native = m.hls && v.canPlayType("application/vnd.apple.mpegurl");
+    let viaJs = false;
+    if (m.hls && !native) viaJs = await hlsPlay(v, m.hls);
+    const useVideo = native || viaJs;
+    v.hidden = !useVideo;
+    f.hidden = useVideo;
+    if (native) v.src = m.hls;
+    if (useVideo) f.src = "about:blank"; else { v.removeAttribute("src"); f.src = m.url; }
     $("#mv").showModal();
+    if (useVideo) v.play().catch(() => {});
   } catch (err) {
     toast(err.message);
   }
 }
-$("#mv-close").addEventListener("click", () => { $("#mv-frame").src = "about:blank"; $("#mv").close(); });
+$("#mv-close").addEventListener("click", () => {
+  $("#mv-frame").src = "about:blank";
+  const v = $("#mv-video"); v.pause();
+  if (hlsObj) { hlsObj.destroy(); hlsObj = null; }
+  v.removeAttribute("src"); v.load();
+  $("#mv").close();
+});
 
 $("#orders").addEventListener("click", (e) => {
   const mv = e.target.closest("[data-movie]");
