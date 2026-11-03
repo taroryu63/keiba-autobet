@@ -294,3 +294,22 @@ def test_sim_by_type():
     assert (t["◎→★ワイド"]["points"], t["◎→★ワイド"]["payout"]) == (3, 650)
     assert (t["◎→★馬単"]["points"], t["◎→★馬単"]["payout"]) == (3, 1100)
     assert (t["◎→★馬連"]["points"], t["◎→★馬連"]["payout"], t["◎→★馬連"]["hits"]) == (3, 700, 1)
+
+
+def test_bet_types_follow_settings():
+    """設定のチェックで券種を選ぶ。3連単は◎1着固定で中央のみ。複勝★はいつも買う。"""
+    plan = {"honmei": 1, "stars": [2, 3, 4]}
+    s = {**S, "buy_wide": False, "buy_umaren": True, "buy_sanrenpuku": True, "buy_sanrentan": True}
+    ts = strategy.bet_tickets(plan, s, 0, "jra")
+    kinds = [t.bet_type for t in ts]
+    assert kinds.count("ワイド") == 0 and kinds.count("馬連") == 3 and kinds.count("3連複") == 3
+    assert kinds.count("3連単") == 6 and kinds.count("複勝") == 3
+    assert all(t.combo[0] == 1 for t in ts if t.bet_type == "3連単")
+    assert "3連単" not in [t.bet_type for t in strategy.bet_tickets(plan, s, 0, "nar")]
+    # 既定は今まで通り（ワイド・3連複・複勝★）
+    assert sorted({t.bet_type for t in strategy.bet_tickets(plan, S, 0, "nar")}) == ["3連複", "ワイド", "複勝"]
+    # 単勝・転がしを外す
+    off = {**S, "buy_tansho": False, "buy_roll": False}
+    assert strategy.plans_for("nar", 1, [2], off) == ["holiday"]
+    assert strategy.plans_for("jra", 1, [], off) == []
+    assert strategy.plans_for("nar", 1, [], S) == ["roll"]

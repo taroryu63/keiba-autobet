@@ -4,6 +4,7 @@
   複勝◎の転がし: ◎のあるレースで、roll_stake（500円）から始め、的中したら払戻金を全額次へ。
       roll_target（4回）連続で的中するか、roll_budget（3,000円＝6回外れ）を使い切ったら終了。
   ◎★の馬券: ワイド◎→★流し・3連複◎→★流し・複勝★（各100円）。予算 bet_limit（7,000円）。
+      （設定のチェックで、馬連◎→★・3連単◎→★（中央のみ）を足したり、ワイド・3連複を外したりできる）
   単勝は買わない。
 中央競馬
   単勝◎: tansho_base（100円）から、外れるたびに100円ずつ増やす（100→200→…→700円、計2,800円）。
@@ -16,7 +17,7 @@
 """
 from __future__ import annotations
 
-from itertools import combinations
+from itertools import combinations, permutations
 
 from .betting import Ticket
 
@@ -25,28 +26,43 @@ def floor100(yen: int) -> int:
     return yen // 100 * 100
 
 
-def plans_for(org: str, honmei: int | None, stars: list[int]) -> list[str]:
+def buys(settings: dict | None, key: str) -> bool:
+    """設定で、その券種を買うことになっているか（古い設定には項目がないので既定値を使う）。"""
+    from .db import DEFAULT_SETTINGS
+    return bool((settings or {}).get(key, DEFAULT_SETTINGS[key]))
+
+
+def plans_for(org: str, honmei: int | None, stars: list[int], settings: dict | None = None) -> list[str]:
     """1レースで予約する買い方。roll=複勝◎の転がし（地方のみ）、holiday=◎★の馬券（中央は単勝◎も）。"""
     out = []
-    if org == "nar" and honmei is not None:
+    if org == "nar" and honmei is not None and buys(settings, "buy_roll"):
         out.append("roll")
-    if stars or (org == "jra" and honmei is not None):
+    if stars or (org == "jra" and honmei is not None and buys(settings, "buy_tansho")):
         out.append("holiday")
     return out
 
 
-def bet_tickets(plan: dict, settings: dict, tansho_amount: int) -> list[Ticket]:
-    """◎と★から馬券を作る。tansho_amount=0なら単勝は買わない。"""
+def bet_tickets(plan: dict, settings: dict, tansho_amount: int, org: str = "jra") -> list[Ticket]:
+    """◎と★から馬券を作る。tansho_amount=0なら単勝は買わない。
+    ワイド・馬連・3連複・3連単は設定でチェックしたものだけ。3連単は◎1着固定で、2・3着は★から（中央のみ）。"""
     h = plan.get("honmei")
     stars = sorted(s for s in plan["stars"] if s != h)
     out: list[Ticket] = []
     if h is not None and tansho_amount:
         out.append(Ticket("単勝", (h,), tansho_amount))
     if h is not None:
-        for s in stars:
-            out.append(Ticket("ワイド", tuple(sorted((h, s))), settings["wide_amount"]))
-        for a, b in combinations(stars, 2):
-            out.append(Ticket("3連複", tuple(sorted((h, a, b))), settings["sanrenpuku_amount"]))
+        if buys(settings, "buy_wide"):
+            for s in stars:
+                out.append(Ticket("ワイド", tuple(sorted((h, s))), settings["wide_amount"]))
+        if buys(settings, "buy_umaren"):
+            for s in stars:
+                out.append(Ticket("馬連", tuple(sorted((h, s))), settings.get("umaren_amount", 100)))
+        if buys(settings, "buy_sanrenpuku"):
+            for a, b in combinations(stars, 2):
+                out.append(Ticket("3連複", tuple(sorted((h, a, b))), settings["sanrenpuku_amount"]))
+        if buys(settings, "buy_sanrentan") and org == "jra":
+            for a, b in permutations(stars, 2):
+                out.append(Ticket("3連単", (h, a, b), settings.get("sanrentan_amount", 100)))
     for s in stars:
         out.append(Ticket("複勝", (s,), settings["fukusho_amount"]))
     return out

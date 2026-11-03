@@ -34,13 +34,14 @@ def simulate(race_date: str, races: list[dict], results: dict, settings: dict) -
         mine = [r for r in races if r.get("org", "jra") == org]
         if not mine:
             continue
-        bet_races = [r for r in mine if "holiday" in strategy.plans_for(org, r.get("honmei"), r.get("stars", []))]
-        bets = simulate_bets(bet_races, results, settings, with_tansho=(org == "jra"))
+        bet_races = [r for r in mine if "holiday" in strategy.plans_for(org, r.get("honmei"), r.get("stars", []), settings)]
+        bets = simulate_bets(bet_races, results, settings, org=org,
+                             with_tansho=(org == "jra" and strategy.buys(settings, "buy_tansho")))
         for x in bets:
             x["kind"] = "単勝・流し・複勝" if org == "jra" else "流し・複勝"
         over |= any(x.get("over") for x in bets)
         rows += bets
-        if org == "nar":
+        if org == "nar" and strategy.buys(settings, "buy_roll"):
             roll = simulate_roll([r for r in mine if r.get("honmei")], results, settings)
             for x in roll:
                 x["kind"] = "転がし"
@@ -105,7 +106,7 @@ def by_type(races: list[dict], results: dict) -> list[dict]:
     return out
 
 
-def simulate_bets(races: list[dict], results: dict, s: dict, with_tansho: bool) -> list[dict]:
+def simulate_bets(races: list[dict], results: dict, s: dict, with_tansho: bool, org: str = "jra") -> list[dict]:
     rows: list[dict] = []
     chain = {"losses": 0}
     done = False  # 単勝が当たったか、7回外れて、その日の単勝が終わったか
@@ -141,7 +142,7 @@ def simulate_bets(races: list[dict], results: dict, s: dict, with_tansho: bool) 
                 if amt and odds is not None and odds <= s["tansho_min_odds"]:
                     row["note"] = f"単勝{odds}倍のため単勝見送り"
                     amt = 0
-        ts = strategy.bet_tickets({"honmei": r.get("honmei"), "stars": r.get("stars", [])}, s, amt)
+        ts = strategy.bet_tickets({"honmei": r.get("honmei"), "stars": r.get("stars", [])}, s, amt, org)
         row["tickets"] = _tickets(ts)
         row["cost"] = sum(t.amount for t in ts)
         row["payout"] = res.payout(row["tickets"])

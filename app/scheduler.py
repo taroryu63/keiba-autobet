@@ -167,7 +167,7 @@ class Runner:
             self.db.set_status(o["id"], "pending", "", expect=o["status"])
             return self.db.get(o["id"])
         amt, chain_id, why = 0, None, ""
-        if o["org"] == "jra" and o["plan"].get("honmei"):
+        if o["org"] == "jra" and o["plan"].get("honmei") and strategy.buys(s, "buy_tansho"):
             # 中央の単勝◎：外れるたびに増やし、7回外れるか一度当たったらその日は終わり
             chain = self.db.chain_for(o["race_date"], "tansho", create=True)
             chain_id = chain["id"]
@@ -182,8 +182,10 @@ class Runner:
                     why = "単勝は予算（7回分）に届いているため見送り" if unresolved else "前の単勝の結果待ちで見送り"
             else:
                 why = "単勝は本日終了済み"
-        tickets = strategy.bet_tickets(o["plan"], s, amt)
+        tickets = strategy.bet_tickets(o["plan"], s, amt, o["org"])
         if not tickets:
+            if not why and o["org"] == "jra" and not strategy.buys(s, "buy_tansho"):
+                why = "設定で単勝を買わない"
             self.db.set_status(o["id"], "cancelled", f"{why or '単勝は本日終了'}のため、買う馬券がありません")
             return None
         plan = {**o["plan"], "tansho": amt}
@@ -208,6 +210,9 @@ class Runner:
         return self.db.get(o["id"])
 
     def _prepare_roll(self, o: dict, s: dict) -> dict | None:
+        if not strategy.buys(s, "buy_roll"):
+            self.db.set_status(o["id"], "cancelled", "設定で「複勝の転がし」を買わないことになっています")
+            return None
         chain = self.db.chain_for(o["race_date"], "roll", create=True)
         if chain["status"] != "active":
             self.db.set_status(o["id"], "cancelled", "本日の転がしは終了しました")

@@ -33,6 +33,15 @@ DEFAULT_SETTINGS = {
     "wide_amount": 100,      # ワイド◎→★の1点の金額
     "sanrenpuku_amount": 100,  # 3連複◎→★の1点の金額
     "fukusho_amount": 100,   # 複勝★の1点の金額
+    "umaren_amount": 100,    # 馬連◎→★の1点の金額
+    "sanrentan_amount": 100,  # 3連単◎→★（◎1着固定）の1点の金額
+    # 買う券種（設定画面のチェック）。複勝★はいつも買う
+    "buy_tansho": True,      # 中央の単勝◎（外れるたびに増額）
+    "buy_roll": True,        # 地方の複勝◎の転がし
+    "buy_wide": True,        # ワイド◎→★
+    "buy_umaren": False,     # 馬連◎→★
+    "buy_sanrenpuku": True,  # 3連複◎→★
+    "buy_sanrentan": False,  # 3連単◎→★（◎1着固定。点数が多いので非推奨）
     "result_delay_min": 10,  # 発走から何分後に払戻を確認し始めるか
     "paused": False,         # 一時停止
 }

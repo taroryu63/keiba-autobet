@@ -499,7 +499,7 @@ class SiteBot:
         groups = []
         rest = tickets
         if self.flow.get("nagashi"):
-            for bt in ("ワイド", "3連複"):
+            for bt in ("ワイド", "馬連", "3連複"):
                 nagashi, rest = make_nagashi(rest, bt)
                 if nagashi:
                     groups.append(("nagashi", nagashi))

@@ -92,6 +92,16 @@
         <p class="muted" id="mode-help"></p>
         <label class="switch"><input type="checkbox" name="paused"><span>一時停止（投票しない）</span></label>
 
+        <h2>買う券種</h2>
+        <p class="muted">チェックした券種だけを買います。★の複勝はいつも買います。変えた設定は、予約済みのレースにも投票の時点で使われます。</p>
+        <label class="switch"><input type="checkbox" name="buy_tansho"><span>単勝◎（中央：100円から外れるたびに増額）</span></label>
+        <label class="switch"><input type="checkbox" name="buy_roll"><span>複勝◎の転がし（地方）</span></label>
+        <label class="switch"><input type="checkbox" name="buy_wide"><span>ワイド ◎→★</span></label>
+        <label class="switch"><input type="checkbox" name="buy_umaren"><span>馬連 ◎→★</span></label>
+        <label class="switch"><input type="checkbox" name="buy_sanrenpuku"><span>3連複 ◎→★</span></label>
+        <label class="switch"><input type="checkbox" name="buy_sanrentan"><span>3連単 ◎→★（◎1着固定・非推奨）</span></label>
+        <p class="muted">3連単は点数が多くなります（★3頭で6点、★4頭で12点）。いまは中央だけで買います（地方の投票サイトの3連単の画面はまだ確かめていないため）。馬連・3連単を初めて使う前に、下の「接続テスト」で入力できるか確かめてください。</p>
+
         <h2>地方競馬：複勝◎の転がし</h2>
         <label>転がしの資金（円）<input name="roll_budget" type="number" step="100" min="0"></label>
         <label>転がしの1回目の金額（円）<input name="roll_stake" type="number" step="100" min="100"></label>
@@ -114,10 +124,12 @@
           </select>
         </label>
 
-        <h2>共通：ワイド・3連複の流し、複勝★</h2>
+        <h2>共通：◎→★の流し、複勝★</h2>
         <label>1日の予算（円、地方と中央で別々）<input name="bet_limit" type="number" step="100" min="0"></label>
         <label>ワイド1点（円）<input name="wide_amount" type="number" step="100" min="100"></label>
         <label>3連複1点（円）<input name="sanrenpuku_amount" type="number" step="100" min="100"></label>
+        <label>馬連1点（円）<input name="umaren_amount" type="number" step="100" min="100"></label>
+        <label>3連単1点（円）<input name="sanrentan_amount" type="number" step="100" min="100"></label>
         <label>複勝1点（円）<input name="fukusho_amount" type="number" step="100" min="100"></label>
 
         <h2>タイミング</h2>
@@ -158,6 +170,6 @@
 
 <dialog id="dlg"><form method="dialog" id="dlg-form"></form></dialog>
 <div id="toast" role="status"></div>
-<script src="app.js?v=10"></script>
+<script src="app.js?v=11"></script>
 </body>
 </html>

@@ -122,9 +122,14 @@ function ticketText(o) {
     if (o.strategy === "holiday") {
       const p = o.plan;
       const parts = [];
-      if (p.honmei && o.org === "jra") parts.push(`単勝◎${p.honmei}`);
-      if (p.honmei && p.stars.length) parts.push(`ワイド${p.honmei}-${p.stars.join(".")}`);
-      if (p.honmei && p.stars.length >= 2) parts.push(`3連複${p.honmei}-${p.stars.join(".")}`);
+      const ss = (S && S.settings) || {};
+      const on = (k) => ss[k] !== false && ss[k] !== undefined;
+      const st = p.stars.join(".");
+      if (p.honmei && o.org === "jra" && on("buy_tansho")) parts.push(`単勝◎${p.honmei}`);
+      if (p.honmei && p.stars.length && on("buy_wide")) parts.push(`ワイド${p.honmei}-${st}`);
+      if (p.honmei && p.stars.length && on("buy_umaren")) parts.push(`馬連${p.honmei}-${st}`);
+      if (p.honmei && p.stars.length >= 2 && on("buy_sanrenpuku")) parts.push(`3連複${p.honmei}-${st}`);
+      if (p.honmei && p.stars.length >= 2 && o.org === "jra" && on("buy_sanrentan")) parts.push(`3連単${p.honmei}→${st}`);
       if (p.stars.length) parts.push(`複勝${p.stars.join(".")}`);
       return parts.join(" / ") + "（金額は投票時に決定）";
     }

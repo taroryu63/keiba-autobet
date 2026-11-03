@@ -251,3 +251,18 @@ def test_roll_end_keeps_other_bets(client):
     assert o[("大井", 2, "holiday")]["status"] == "queued"
     tick(c, "15:55")
     assert [t["bet_type"] for t in FakeBot.votes[-1][3]] == ["ワイド", "ワイド", "3連複", "複勝", "複勝"]
+
+
+def test_settings_turn_off_tansho_and_roll(client):
+    """予約した後に設定で外しても、投票の時点の設定に従う。"""
+    c = client
+    c.clock["now"] = datetime(2026, 11, 2, 8, 0, tzinfo=JST)
+    c.put("/api/settings", json={"mode": "live"})
+    text = "大井\n1R 15:00 ◎1 ★2.3\n"
+    assert c.post("/api/bulk", json={"race_date": "2026-11-02", "text": text}).json()["created"] == 2
+    assert c.put("/api/settings", json={"buy_roll": False, "buy_umaren": True, "buy_sanrenpuku": False}).status_code == 200
+    tick(c, "14:55")
+    o = by_strategy(c, "2026-11-02")
+    assert o[("大井", 1, "roll")]["status"] == "cancelled"
+    assert [t["bet_type"] for t in FakeBot.votes[-1][3]] == ["ワイド", "ワイド", "馬連", "馬連", "複勝", "複勝"]
+    assert len(FakeBot.votes) == 1

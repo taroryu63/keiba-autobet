@@ -10,7 +10,7 @@ STAGES = [
     ("odds", "単勝オッズの読み取り"),
     ("ticket", "馬券の入力（複勝100円）"),
     ("confirm", "確認画面（合計金額）"),
-    ("many", "今のルールの買い方で入力（流し・複勝、中央は単勝も。購入はしません）"),
+    ("many", "設定で選んだ券種の買い方で入力（購入はしません）"),
 ]
 
 # 読めなくても投票は進められる段階。失敗しても次へ進む
@@ -19,20 +19,21 @@ OPTIONAL = {"time", "odds"}
 ALWAYS = {"many"}
 
 
-def sample_order(venue: str, race_no: int, horse: int, org: str = "jra") -> dict:
+def sample_order(venue: str, race_no: int, horse: int, org: str = "jra", settings: dict | None = None) -> dict:
     """今のルールの見本: ◎＝horse、★＝その次の3頭（1〜8番から）。
     中央：単勝◎＋ワイド流し3点＋3連複流し3点＋複勝★3点＝10点 1,000円
     地方：ワイド流し3点＋3連複流し3点＋複勝★3点＝9点 900円"""
     from .db import DEFAULT_SETTINGS
     from .strategy import bet_tickets
     stars = [((horse + k - 1) % 8) + 1 for k in range(1, 4)]
-    ts = bet_tickets({"honmei": horse, "stars": stars}, DEFAULT_SETTINGS, 100 if org == "jra" else 0)
+    s = {**DEFAULT_SETTINGS, **(settings or {})}
+    ts = bet_tickets({"honmei": horse, "stars": stars}, s, 100 if org == "jra" and s["buy_tansho"] else 0, org)
     tickets = [{"bet_type": t.bet_type, "combo": list(t.combo), "amount": t.amount} for t in ts]
     return {"id": 0, "org": org, "venue": venue, "race_no": race_no, "bet_type": "◎★", "tickets": tickets,
             "points": len(tickets), "total": sum(t["amount"] for t in tickets), "unit_amount": 100}
 
 
-async def run_check(bot: SiteBot, venue: str, race_no: int, horse: int) -> list[dict]:
+async def run_check(bot: SiteBot, venue: str, race_no: int, horse: int, settings: dict | None = None) -> list[dict]:
     """各段階の結果 [{"stage", "label", "ok", "info", "shot", "parts"}] を返す。"""
     vars = {**bot.credentials, "venue": venue, "race_no": race_no, "num": horse, "bet_type": "複勝",
             "method_label": "通常", "total": 100, "total_comma": "100", "points": 1}
@@ -43,7 +44,7 @@ async def run_check(bot: SiteBot, venue: str, race_no: int, horse: int) -> list[
             await bot.run("cancel", vars)
         except Exception:
             pass
-        order = sample_order(venue, race_no, horse, "nar" if bot.site == "spat4" else "jra")
+        order = sample_order(venue, race_no, horse, "nar" if bot.site == "spat4" else "jra", settings)
         res = await bot.vote(order, "rehearsal")
         if res.status != "rehearsed":
             raise RuntimeError(res.message)

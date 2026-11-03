@@ -205,18 +205,24 @@ def _plans_for(r) -> list[tuple[str, str]]:
     s = db().settings()
     st = ".".join(map(str, r.stars))
     out = []
-    for kind in strategy.plans_for(r.org, r.honmei, r.stars):
+    buy = lambda k: strategy.buys(s, k)  # noqa: E731
+    for kind in strategy.plans_for(r.org, r.honmei, r.stars, s):
         if kind == "roll":
             out.append(("roll", f"複勝転がし ◎{r.honmei}"))
             continue
         parts = []
-        if r.org == "jra" and r.honmei is not None:
+        if r.org == "jra" and r.honmei is not None and buy("buy_tansho"):
             parts.append(f"単勝◎{r.honmei}")
         if r.honmei is not None and r.stars:
-            parts.append(f"ワイド{r.honmei}→{st}（各{s['wide_amount']}円）")
-            if len(r.stars) >= 2:
-                n = len(r.stars) * (len(r.stars) - 1) // 2
-                parts.append(f"3連複{r.honmei}→{st}（{n}点・各{s['sanrenpuku_amount']}円）")
+            n = len(r.stars)
+            if buy("buy_wide"):
+                parts.append(f"ワイド{r.honmei}→{st}（各{s['wide_amount']}円）")
+            if buy("buy_umaren"):
+                parts.append(f"馬連{r.honmei}→{st}（各{s['umaren_amount']}円）")
+            if n >= 2 and buy("buy_sanrenpuku"):
+                parts.append(f"3連複{r.honmei}→{st}（{n * (n - 1) // 2}点・各{s['sanrenpuku_amount']}円）")
+            if n >= 2 and buy("buy_sanrentan") and r.org == "jra":
+                parts.append(f"3連単{r.honmei}→{st}（◎1着固定・{n * (n - 1)}点・各{s['sanrentan_amount']}円）")
         if r.stars:
             parts.append(f"複勝{st}（各{s['fukusho_amount']}円）")
         out.append(("holiday", " / ".join(parts)))
@@ -225,7 +231,7 @@ def _plans_for(r) -> list[tuple[str, str]]:
 
 def _bets_cost(r) -> int:
     plan = {"honmei": r.honmei, "stars": r.stars}
-    return strategy.bets_cost(strategy.bet_tickets(plan, db().settings(), 0)) if r.stars else 0
+    return strategy.bets_cost(strategy.bet_tickets(plan, db().settings(), 0, r.org)) if r.stars else 0
 
 
 @app.post("/api/parse", dependencies=[Depends(auth)])
@@ -478,6 +484,14 @@ class SettingsIn(BaseModel):
     wide_amount: int | None = Field(default=None, ge=100, le=100_000)
     sanrenpuku_amount: int | None = Field(default=None, ge=100, le=100_000)
     fukusho_amount: int | None = Field(default=None, ge=100, le=100_000)
+    umaren_amount: int | None = Field(default=None, ge=100, le=100_000)
+    sanrentan_amount: int | None = Field(default=None, ge=100, le=100_000)
+    buy_tansho: bool | None = None
+    buy_roll: bool | None = None
+    buy_wide: bool | None = None
+    buy_umaren: bool | None = None
+    buy_sanrenpuku: bool | None = None
+    buy_sanrentan: bool | None = None
     result_delay_min: int | None = Field(default=None, ge=3, le=60)
     paused: bool | None = None
 
@@ -487,7 +501,8 @@ def put_settings(body: SettingsIn):
     vals = body.model_dump(exclude_none=True)
     if vals.get("mode") == "live" and not config.allow_live:
         raise HTTPException(400, "本番投票はサーバーの .env で ALLOW_LIVE=1 にしたときだけ選べます")
-    for k in ("roll_budget", "roll_stake", "tansho_base", "bet_limit", "wide_amount", "sanrenpuku_amount", "fukusho_amount"):
+    for k in ("roll_budget", "roll_stake", "tansho_base", "bet_limit", "wide_amount", "sanrenpuku_amount", "fukusho_amount",
+              "umaren_amount", "sanrentan_amount"):
         if k in vals and vals[k] % 100:
             raise HTTPException(400, "金額は100円単位で指定してください")
     return db().save_settings(vals)
@@ -511,7 +526,7 @@ async def check_site(body: CheckIn):
         raise HTTPException(400, "ログイン情報がサーバーに設定されていません（セットアップをやり直してください）")
     runner = state["runner"]
     async with runner._lock:  # 投票と同時に動かない
-        steps = await run_check(runner.bot_factory(body.site), body.venue, body.race_no, body.horse)
+        steps = await run_check(runner.bot_factory(body.site), body.venue, body.race_no, body.horse, db().settings())
     db().log(f"接続テスト {body.site}: " + " / ".join(f"{x['label']}{'○' if x['ok'] else '×'}" for x in steps))
     return {"steps": steps, "ok": all(x["ok"] for x in steps) and {"confirm", "many"} <= {x["stage"] for x in steps}}
 
